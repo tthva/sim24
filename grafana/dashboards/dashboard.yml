@@ -1,0 +1,17 @@
+# ============================
+# SIM24 — Grafana Dashboard Provisioning
+# ============================
+
+apiVersion: 1
+
+providers:
+  - name: "SIM24 Dashboards"
+    orgId: 1
+    folder: "SIM24"
+    folderUid: "sim24"
+    type: file
+    disableDeletion: true
+    editable: false
+    updateIntervalSeconds: 30
+    options:
+      path: /etc/grafana/provisioning/dashboards/json

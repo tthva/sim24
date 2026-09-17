@@ -1,0 +1,21 @@
+# ============================
+# SIM24 — Grafana Loki Datasource
+# ============================
+
+apiVersion: 1
+
+datasources:
+  - name: Loki
+    type: loki
+    access: proxy
+    url: http://loki:3100
+    isDefault: false
+    editable: false
+    uid: loki_ds
+    jsonData:
+      timeout: 30s
+      maxLines: 5000
+      derivedFields:
+        - name: "TraceID"
+          matcherRegex: "trace_id=(\\w+)"
+          url: "http://tempo:3200/trace/$${__value.raw}"

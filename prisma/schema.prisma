@@ -1,0 +1,486 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+model User {
+  id                      String                 @id @default(uuid()) @db.Uuid
+  username                String                 @unique
+  password                String
+  fullName                String?
+  phone                   String?
+  email                   String?
+  active                  Boolean                @default(true)
+  userType                UserType
+  tokenVersion            Int                    @default(0)
+  lastLogin               DateTime?
+  createdAt               DateTime               @default(now())
+  updatedAt               DateTime               @updatedAt
+  adminProfile            Admin?
+  agentProfile            Agent?
+  auditLogs               AuditLog[]
+  roleAssignments         UserRoleAssignment[]
+  sessions                Session[]
+  refreshTokens           RefreshToken[]
+  workflowStepAssignments WorkflowStepInstance[] @relation("StepAssignee")
+  attachments             Attachment[]
+  workflowVersions        WorkflowVersion[]      @relation("VersionCreator")
+  createdWorkflows        Workflow[]             @relation("WorkflowCreator")
+  updatedWorkflows        Workflow[]             @relation("WorkflowUpdater")
+
+  @@index([userType])
+  @@index([active])
+  @@map("users")
+}
+
+model Session {
+  id              String    @id @default(uuid()) @db.Uuid
+  userId          String?   @db.Uuid  // Optional: null for EndUser sessions
+  endUserId       String?   @db.Uuid  // Optional: for EndUser authentication
+  refreshFamily   String    @unique
+  userAgent       String?
+  ipAddress       String?
+  lastUsedAt      DateTime?
+  revokedAt       DateTime?
+  createdAt       DateTime  @default(now())
+  user            User?     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  endUser         EndUser?  @relation(fields: [endUserId], references: [id], onDelete: Cascade)
+  refreshTokens   RefreshToken[]
+
+  @@index([userId])
+  @@index([endUserId])
+  @@index([refreshFamily])
+  @@map("sessions")
+}
+
+model RefreshToken {
+  id            String    @id @default(uuid()) @db.Uuid
+  userId        String?   @db.Uuid  // Optional: null for EndUser refresh tokens
+  endUserId     String?   @db.Uuid  // Optional: for EndUser authentication
+  sessionId     String    @db.Uuid
+  tokenHash     String    @unique
+  family        String
+  expiresAt     DateTime
+  consumedAt    DateTime?
+  revokedAt     DateTime?
+  createdAt     DateTime  @default(now())
+  user          User?     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  endUser       EndUser?  @relation(fields: [endUserId], references: [id], onDelete: Cascade)
+  session       Session   @relation(fields: [sessionId], references: [id], onDelete: Cascade)
+
+  @@index([userId])
+  @@index([endUserId])
+  @@index([family])
+  @@map("refresh_tokens")
+}
+
+model Admin {
+  id         String     @id @default(uuid()) @db.Uuid
+  userId     String     @unique @db.Uuid
+  department Department
+  createdAt  DateTime   @default(now())
+  updatedAt  DateTime   @updatedAt
+  user       User       @relation(fields: [userId], references: [id], onDelete: Cascade)
+  agents     Agent[]
+
+  @@index([department])
+  @@map("admins")
+}
+
+model Agent {
+  id                String             @id @default(uuid()) @db.Uuid
+  userId            String             @unique @db.Uuid
+  department        Department
+  adminId           String?            @db.Uuid
+  active            Boolean            @default(true)
+  createdAt         DateTime           @default(now())
+  updatedAt         DateTime           @updatedAt
+  admin             Admin?             @relation(fields: [adminId], references: [id])
+  user              User               @relation(fields: [userId], references: [id], onDelete: Cascade)
+  forms             CustomerForm[]
+  notifications     Notification[]
+  workflowInstances WorkflowInstance[]
+
+  @@index([department])
+  @@index([adminId])
+  @@map("agents")
+}
+
+model Role {
+  id          String               @id @default(uuid()) @db.Uuid
+  code        String               @unique
+  title       String
+  description String?
+  isSystem    Boolean              @default(false)
+  createdAt   DateTime             @default(now())
+  updatedAt   DateTime             @updatedAt
+  permissions RolePermission[]
+  assignments UserRoleAssignment[]
+
+  @@map("roles")
+}
+
+model Permission {
+  id              String           @id @default(uuid()) @db.Uuid
+  code            String           @unique
+  name            String
+  group           String
+  description     String?
+  createdAt       DateTime         @default(now())
+  rolePermissions RolePermission[]
+
+  @@index([group])
+  @@map("permissions")
+}
+
+model RolePermission {
+  id           String     @id @default(uuid()) @db.Uuid
+  roleId       String     @db.Uuid
+  permissionId String     @db.Uuid
+  permission   Permission @relation(fields: [permissionId], references: [id], onDelete: Cascade)
+  role         Role       @relation(fields: [roleId], references: [id], onDelete: Cascade)
+
+  @@unique([roleId, permissionId])
+  @@map("role_permissions")
+}
+
+model UserRoleAssignment {
+  id        String   @id @default(uuid()) @db.Uuid
+  userId    String   @db.Uuid
+  roleId    String   @db.Uuid
+  createdAt DateTime @default(now())
+  role      Role     @relation(fields: [roleId], references: [id], onDelete: Cascade)
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([userId, roleId])
+  @@map("user_role_assignments")
+}
+
+model CustomerForm {
+  id              String   @id @default(cuid())
+  phone           String?
+  fullName        String?
+  nationalId      String?
+  formType        String
+  formData        Json
+  metadata        Json?
+  workflowCode    String?
+  workflowStarted Boolean  @default(false)
+  agentId         String?  @db.Uuid
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
+  agent           Agent?   @relation(fields: [agentId], references: [id])
+  attachments     Attachment[]
+
+  @@index([formType])
+  @@index([phone])
+  @@index([agentId])
+  @@index([workflowCode])
+  @@index([workflowStarted])
+  @@index([formType, createdAt])
+  @@index([formType, workflowStarted, createdAt])
+  @@index([phone, formType, createdAt])
+  @@index([fullName, formType])
+  @@map("customer_forms")
+}
+
+model EndUser {
+  id        String    @id @default(uuid()) @db.Uuid
+  username  String    @unique
+  password  String
+  phone     String?
+  fullName  String?
+  active    Boolean   @default(true)
+  lastLogin DateTime?
+  createdAt DateTime  @default(now())
+  updatedAt DateTime  @updatedAt
+  sessions  Session[]
+  refreshTokens RefreshToken[]
+
+  @@map("end_users")
+}
+
+model Workflow {
+  id          String            @id @default(uuid()) @db.Uuid
+  code        String            @unique
+  title       String
+  description String?
+  department  Department
+  status      WorkflowStatus    @default(DRAFT)
+  createdById String            @db.Uuid
+  updatedById String?           @db.Uuid
+  createdAt   DateTime          @default(now())
+  updatedAt   DateTime          @updatedAt
+  versions    WorkflowVersion[]
+  createdBy   User              @relation("WorkflowCreator", fields: [createdById], references: [id])
+  updatedBy   User?             @relation("WorkflowUpdater", fields: [updatedById], references: [id])
+
+  @@index([department])
+  @@index([status])
+  @@map("workflows")
+}
+
+model WorkflowVersion {
+  id          String             @id @default(uuid()) @db.Uuid
+  workflowId  String             @db.Uuid
+  version     Int
+  schema      Json
+  changelog   String?
+  createdById String             @db.Uuid
+  createdAt   DateTime           @default(now())
+  instances   WorkflowInstance[]
+  steps       WorkflowStep[]
+  createdBy   User               @relation("VersionCreator", fields: [createdById], references: [id])
+  workflow    Workflow           @relation(fields: [workflowId], references: [id], onDelete: Cascade)
+
+  @@unique([workflowId, version])
+  @@index([workflowId])
+  @@map("workflow_versions")
+}
+
+/// A single step in a workflow
+model WorkflowStep {
+  id             String                 @id @default(uuid()) @db.Uuid
+  versionId      String                 @db.Uuid
+  stepOrder      Int
+  code           String
+  title          String
+  description    String?
+  department     Department
+  formSchema     Json
+  allowedActions String[]
+  isInitial      Boolean                @default(false)
+  isFinal        Boolean                @default(false)
+  slaHours       Int?
+  rejectBehavior RejectBehavior         @default(END_WORKFLOW)
+  createdAt      DateTime               @default(now())
+  updatedAt      DateTime               @updatedAt
+  instances      WorkflowStepInstance[]
+  version        WorkflowVersion        @relation(fields: [versionId], references: [id], onDelete: Cascade)
+
+  @@unique([versionId, stepOrder])
+  @@index([versionId])
+  @@index([department])
+  @@map("workflow_steps")
+}
+
+/// Runtime instance of a workflow
+model WorkflowInstance {
+  id               String                 @id @default(uuid()) @db.Uuid
+  versionId        String                 @db.Uuid
+  agentId          String?                @db.Uuid
+  status           WorkflowInstanceStatus @default(PENDING)
+  formData         Json
+  metadata         Json?
+  currentStepOrder Int?
+  customerFormId   String?
+  dueAt            DateTime?
+  completedAt      DateTime?
+  createdAt        DateTime               @default(now())
+  updatedAt        DateTime               @updatedAt
+  agent            Agent?                 @relation(fields: [agentId], references: [id])
+  version          WorkflowVersion        @relation(fields: [versionId], references: [id])
+  stepInstances    WorkflowStepInstance[]
+
+  @@index([versionId])
+  @@index([agentId])
+  @@index([status])
+  @@index([createdAt])
+  @@map("workflow_instances")
+}
+
+/// Runtime snapshot of a single step's execution
+model WorkflowStepInstance {
+  id           String           @id @default(uuid()) @db.Uuid
+  instanceId   String           @db.Uuid
+  stepId       String           @db.Uuid
+  status       StepStatus       @default(PENDING)
+  assignedToId String?          @db.Uuid
+  data         Json?
+  formData     Json?
+  notes        String?
+  dueAt        DateTime?
+  assignedAt   DateTime?
+  startedAt    DateTime?
+  completedAt  DateTime?
+  createdAt    DateTime         @default(now())
+  updatedAt    DateTime         @updatedAt
+  assignedTo   User?            @relation("StepAssignee", fields: [assignedToId], references: [id])
+  instance     WorkflowInstance @relation(fields: [instanceId], references: [id], onDelete: Cascade)
+  step         WorkflowStep     @relation(fields: [stepId], references: [id])
+
+  @@index([instanceId])
+  @@index([stepId])
+  @@index([assignedToId])
+  @@index([status])
+  @@map("workflow_step_instances")
+}
+
+model AuditLog {
+  id         String      @id @default(uuid()) @db.Uuid
+  actorId    String?     @db.Uuid
+  entity     String
+  entityId   String?
+  action     AuditAction
+  department Department?
+  metadata   Json?
+  ipAddress  String?
+  userAgent  String?
+  createdAt  DateTime    @default(now())
+  actor      User?       @relation(fields: [actorId], references: [id])
+
+  @@index([actorId])
+  @@index([entity, entityId])
+  @@index([action])
+  @@index([createdAt])
+  @@index([department])
+  @@map("audit_logs")
+}
+
+model WebhookEvent {
+  id        String   @id @default(uuid()) @db.Uuid
+  event     String
+  payload   String
+  status    String
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@index([status])
+  @@index([createdAt])
+  @@map("webhook_events")
+}
+
+model Notification {
+  id        String   @id @default(uuid()) @db.Uuid
+  agentId   String   @db.Uuid
+  title     String
+  body      String
+  read      Boolean  @default(false)
+  link      String?
+  createdAt DateTime @default(now())
+  agent     Agent    @relation(fields: [agentId], references: [id], onDelete: Cascade)
+
+  @@index([agentId])
+  @@index([agentId, read])
+  @@map("notifications")
+}
+
+model Attachment {
+  id           String         @id @default(uuid()) @db.Uuid
+  fileKey      String         @unique
+  originalName String
+  mimeType     String
+  fileSize     Int
+  formId       String?
+  uploadedById String         @db.Uuid
+  createdAt    DateTime       @default(now())
+  form         CustomerForm?  @relation(fields: [formId], references: [id])
+  uploadedBy   User           @relation(fields: [uploadedById], references: [id])
+
+  @@index([formId])
+  @@index([uploadedById])
+  @@index([createdAt])
+  @@map("attachments")
+}
+
+enum Department {
+  PRICE
+  INVESTMENT
+  PRODUCT
+  SELL
+}
+
+enum UserType {
+  ADMIN
+  AGENT
+}
+
+enum WorkflowStatus {
+  DRAFT
+  ACTIVE
+  ARCHIVED
+}
+
+enum WorkflowInstanceStatus {
+  PENDING
+  IN_PROGRESS
+  COMPLETED
+  REJECTED
+  CANCELLED
+}
+
+enum StepStatus {
+  PENDING
+  ASSIGNED
+  IN_PROGRESS
+  COMPLETED
+  SKIPPED
+  REJECTED
+}
+
+enum AuditAction {
+  CREATE
+  UPDATE
+  DELETE
+  LOGIN
+  LOGOUT
+  ASSIGN
+  COMPLETE
+  REJECT
+  TRANSFER
+  REASSIGN
+  STEP_ASSIGNED
+  STEP_COMPLETED
+  STEP_REJECTED
+  STEP_REASSIGNED
+}
+
+enum RejectBehavior {
+  END_WORKFLOW
+  GO_TO_STEP
+}
+
+model ConsignmentItem {
+  id                String   @id @default(cuid())
+  simNumber         String
+  ownerName         String
+  phone             String
+  price             String?
+  status            String   @default("available") // available, reserved, sold
+  notes             String?
+  duration          Int?     // مدت امانت (روز)
+  source            String   @default("manual") // manual | workflow
+  workflowInstanceId String? @unique // SELL_CONSIGNMENT instance that created this item (per-instance dedupe)
+  deletedAt         DateTime? // soft delete — null = active
+  createdAt         DateTime @default(now())
+  updatedAt         DateTime @updatedAt
+
+  @@map("consignment_items")
+}
+
+// ─── Price-expert anti-abuse lists ───
+model BlacklistPhone {
+  id        String   @id @default(cuid())
+  phone     String   @unique
+  reason    String?
+  addedById String?  @db.Uuid // operator user who added
+  createdAt DateTime @default(now())
+
+  @@index([phone])
+  @@map("blacklist_phones")
+}
+
+model WhitelistPhone {
+  id        String   @id @default(cuid())
+  phone     String   @unique
+  note      String?
+  addedById String?  @db.Uuid // operator user who added
+  createdAt DateTime @default(now())
+
+  @@index([phone])
+  @@map("whitelist_phones")
+}

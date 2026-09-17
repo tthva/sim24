@@ -1,0 +1,166 @@
+{
+  "title": "SIM24 - Overview Dashboard",
+  "uid": "sim24-overview",
+  "version": 1,
+  "schemaVersion": 39,
+  "tags": ["sim24", "production"],
+  "timezone": "browser",
+  "editable": false,
+  "panels": [
+    {
+      "title": "App Uptime",
+      "type": "stat",
+      "gridPos": { "h": 8, "w": 4, "x": 0, "y": 0 },
+      "targets": [
+        {
+          "expr": "time() - process_start_time_seconds{job=\"app\"}",
+          "legendFormat": "Uptime (seconds)"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "s",
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              { "color": "red", "value": null },
+              { "color": "yellow", "value": 60 },
+              { "color": "green", "value": 3600 }
+            ]
+          }
+        }
+      }
+    },
+    {
+      "title": "Active HTTP Requests",
+      "type": "graph",
+      "gridPos": { "h": 8, "w": 8, "x": 4, "y": 0 },
+      "targets": [
+        {
+          "expr": "rate(http_requests_total{job=\"app\"}[5m])",
+          "legendFormat": "{{method}} {{route}}"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "cps"
+        }
+      }
+    },
+    {
+      "title": "HTTP Error Rate",
+      "type": "graph",
+      "gridPos": { "h": 8, "w": 6, "x": 12, "y": 0 },
+      "targets": [
+        {
+          "expr": "rate(http_requests_total{job=\"app\", status=~\"5..\"}[5m]) / rate(http_requests_total{job=\"app\"}[5m]) * 100",
+          "legendFormat": "Error %"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "percent"
+        }
+      }
+    },
+    {
+      "title": "Database Connections",
+      "type": "graph",
+      "gridPos": { "h": 8, "w": 6, "x": 0, "y": 8 },
+      "targets": [
+        {
+          "expr": "pg_stat_database_numbackends{job=\"postgres\"}",
+          "legendFormat": "Active connections"
+        }
+      ]
+    },
+    {
+      "title": "Memory Usage",
+      "type": "gauge",
+      "gridPos": { "h": 8, "w": 4, "x": 6, "y": 8 },
+      "targets": [
+        {
+          "expr": "container_memory_usage_bytes{container=\"sim24-app\"} / container_memory_limit_bytes{container=\"sim24-app\"} * 100",
+          "legendFormat": "Memory %"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "percent",
+          "max": 100,
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              { "color": "green", "value": null },
+              { "color": "yellow", "value": 70 },
+              { "color": "red", "value": 90 }
+            ]
+          }
+        }
+      }
+    },
+    {
+      "title": "CPU Usage",
+      "type": "graph",
+      "gridPos": { "h": 8, "w": 8, "x": 10, "y": 8 },
+      "targets": [
+        {
+          "expr": "rate(container_cpu_usage_seconds_total{container=\"sim24-app\"}[5m])",
+          "legendFormat": "CPU cores"
+        }
+      ]
+    },
+    {
+      "title": "Redis Hit Rate",
+      "type": "graph",
+      "gridPos": { "h": 8, "w": 6, "x": 0, "y": 16 },
+      "targets": [
+        {
+          "expr": "rate(redis_keyspace_hits_total[5m]) / (rate(redis_keyspace_hits_total[5m]) + rate(redis_keyspace_misses_total[5m])) * 100",
+          "legendFormat": "Cache hit %"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "percent"
+        }
+      }
+    },
+    {
+      "title": "Disk Usage",
+      "type": "gauge",
+      "gridPos": { "h": 8, "w": 4, "x": 6, "y": 16 },
+      "targets": [
+        {
+          "expr": "container_fs_usage_bytes{container=\"sim24-db\"} / container_fs_limit_bytes{container=\"sim24-db\"} * 100",
+          "legendFormat": "DB Disk %"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "percent",
+          "max": 100,
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              { "color": "green", "value": null },
+              { "color": "yellow", "value": 75 },
+              { "color": "red", "value": 90 }
+            ]
+          }
+        }
+      }
+    },
+    {
+      "title": "Nginx Requests/sec",
+      "type": "graph",
+      "gridPos": { "h": 8, "w": 8, "x": 10, "y": 16 },
+      "targets": [
+        {
+          "expr": "rate(nginx_http_requests_total[5m])",
+          "legendFormat": "Requests/sec"
+        }
+      ]
+    }
+  ]
+}

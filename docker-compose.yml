@@ -1,0 +1,563 @@
+version: "3.9"
+
+# ============================
+# SIM24 — Advanced Production Stack
+# 16GB RAM | 4 CPU Cores | Single Server
+# ============================
+
+# ─── Global logging with rotation (prevents disk overflow on HDD) ───
+x-logging: &default-logging
+  driver: "json-file"
+  options:
+    max-size: "10m"
+    max-file: "3"
+    compress: "true"
+
+# ─── Resource limits anchor ───
+x-app-resources: &app-resources
+  mem_limit: ${APP_MEM_LIMIT:-768M}
+  mem_reservation: 512M
+  cpus: ${APP_CPU_LIMIT:-1.0}
+  pids_limit: 256
+
+x-postgres-resources: &postgres-resources
+  mem_limit: ${POSTGRES_MEM_LIMIT:-1G}
+  mem_reservation: 512M
+  cpus: ${POSTGRES_CPU_LIMIT:-2.0}
+  pids_limit: 200
+
+x-redis-resources: &redis-resources
+  mem_limit: ${REDIS_MEM_LIMIT:-256M}
+  mem_reservation: 128M
+  cpus: 0.5
+
+x-minio-resources: &minio-resources
+  mem_limit: ${MINIO_MEM_LIMIT:-512M}
+  mem_reservation: 256M
+  cpus: 0.5
+
+x-exporter-resources: &exporter-resources
+  mem_limit: 128M
+  mem_reservation: 64M
+  cpus: 0.2
+
+# ─── Network ───
+networks:
+  sim24-net:
+    driver: bridge
+    ipam:
+      config:
+        - subnet: 172.24.0.0/16
+
+services:
+  # ─── PostgreSQL 15 (HDD-optimized) ───
+  postgres:
+    image: postgres:15-alpine
+    container_name: sim24-db
+    restart: unless-stopped
+    networks:
+      - sim24-net
+    logging: *default-logging
+    <<: *postgres-resources
+    environment:
+      POSTGRES_USER: ${POSTGRES_USER:-sim24}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?err}
+      POSTGRES_DB: ${POSTGRES_DB:-sim24}
+      # HDD-optimized PostgreSQL config
+      POSTGRES_SHARED_BUFFERS: ${POSTGRES_SHARED_BUFFERS:-512MB}
+      POSTGRES_EFFECTIVE_CACHE_SIZE: ${POSTGRES_EFFECTIVE_CACHE_SIZE:-1536MB}
+      POSTGRES_WORK_MEM: ${POSTGRES_WORK_MEM:-32MB}
+      POSTGRES_MAINTENANCE_WORK_MEM: ${POSTGRES_MAINTENANCE_WORK_MEM:-128MB}
+      POSTGRES_RANDOM_PAGE_COST: ${POSTGRES_RANDOM_PAGE_COST:-4.0}
+      POSTGRES_SEQ_PAGE_COST: ${POSTGRES_SEQ_PAGE_COST:-2.0}
+    # Expose PostgreSQL on a non-conflicting host port (e.g., 5433)
+    ports:
+      - "127.0.0.1:5433:5432"
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+      # The custom postgresql.conf contains environment variable placeholders
+      # that PostgreSQL cannot parse, leading to syntax errors on startup.
+      # Commenting out this bind‑mount lets the container use its default config.
+      # - ./postgres/postgresql.conf:/etc/postgresql/postgresql.conf:ro
+      - ./scripts/init-db.sh:/docker-entrypoint-initdb.d/init-db.sh:ro
+    # Use the default PostgreSQL command (no custom config file) to avoid
+    # errors caused by the missing postgresql.conf mount.
+    # command:
+    #   - "postgres"
+    #   - "-c"
+    #   - "config_file=/etc/postgresql/postgresql.conf"
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-sim24} -d ${POSTGRES_DB:-sim24}"]
+      interval: 15s
+      timeout: 5s
+      retries: 5
+      start_period: 45s
+
+  # ─── Redis 7 ───
+  redis:
+    image: redis:7-alpine
+    container_name: sim24-redis
+    restart: unless-stopped
+    networks:
+      - sim24-net
+    logging: *default-logging
+    <<: *redis-resources
+    # Host port exposed for PM2 host-mode deployment (nginx-pm2 / ecosystem.config.js).
+    # NOTE: 6379 is inside a Windows reserved port range on this host → use 16379.
+    # Container-internal services still use sim24-net DNS (redis:6379).
+    ports:
+      - "127.0.0.1:16379:6379"
+    volumes:
+      - redisdata:/data
+      - ./redis/redis.conf:/usr/local/etc/redis/redis.conf:ro
+    command: ["redis-server", "/usr/local/etc/redis/redis.conf"]
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 10s
+      timeout: 3s
+      retries: 5
+
+  # ─── Next.js Application Instance 1 ───
+  app1:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: sim24-app1
+    restart: unless-stopped
+    networks:
+      - sim24-net
+    logging: *default-logging
+    <<: *app-resources
+    environment:
+      NODE_ENV: ${NODE_ENV:-production}
+      PORT: 3000
+      DATABASE_URL: postgresql://${POSTGRES_USER:-sim24}:${POSTGRES_PASSWORD:?err}@postgres:5432/${POSTGRES_DB:-sim24}?connection_limit=5
+      JWT_SECRET: ${JWT_SECRET:?err}
+      REDIS_URL: ${REDIS_URL:-redis://redis:6379}
+      CRM_WEBHOOK_URL: ${CRM_WEBHOOK_URL:-}
+      CRON_API_KEY: ${CRON_API_KEY:-}
+      HOSTNAME: "0.0.0.0"
+      TZ: UTC
+    ports: []
+    expose:
+      - "3000"
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:3000/api/auth/check"]
+      interval: 15s
+      timeout: 10s
+      retries: 5
+      start_period: 45s
+    # Prisma migration runs only on app1 to avoid race conditions
+    command: >
+      sh -c "
+        npx prisma migrate deploy &&
+        node server.js
+      "
+
+  # ─── Next.js Application Instance 2 ───
+  app2:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: sim24-app2
+    restart: unless-stopped
+    networks:
+      - sim24-net
+    logging: *default-logging
+    <<: *app-resources
+    environment:
+      NODE_ENV: ${NODE_ENV:-production}
+      PORT: 3000
+      DATABASE_URL: postgresql://${POSTGRES_USER:-sim24}:${POSTGRES_PASSWORD:?err}@postgres:5432/${POSTGRES_DB:-sim24}?connection_limit=5
+      JWT_SECRET: ${JWT_SECRET:?err}
+      REDIS_URL: ${REDIS_URL:-redis://redis:6379}
+      CRM_WEBHOOK_URL: ${CRM_WEBHOOK_URL:-}
+      CRON_API_KEY: ${CRON_API_KEY:-}
+      HOSTNAME: "0.0.0.0"
+      TZ: UTC
+    ports: []
+    expose:
+      - "3000"
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+      app1:
+        condition: service_started
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:3000/api/auth/check"]
+      interval: 15s
+      timeout: 10s
+      retries: 5
+      start_period: 45s
+    command: >
+      sh -c "
+        node server.js
+      "
+
+  # ─── BullMQ Worker (Background Job Processing) ───
+  worker:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: sim24-worker
+    restart: unless-stopped
+    networks:
+      - sim24-net
+    logging: *default-logging
+    <<: *app-resources
+    environment:
+      NODE_ENV: ${NODE_ENV:-production}
+      PORT: 3010
+      DATABASE_URL: postgresql://${POSTGRES_USER:-sim24}:${POSTGRES_PASSWORD:?err}@postgres:5432/${POSTGRES_DB:-sim24}?connection_limit=5
+      JWT_SECRET: ${JWT_SECRET:?err}
+      REDIS_URL: ${REDIS_URL:-redis://redis:6379}
+      QUEUE_CONCURRENCY: ${QUEUE_CONCURRENCY:-5}
+      SERVICE_TYPE: worker
+      TZ: UTC
+    ports: []
+    expose:
+      - "3010"
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    # Worker runs background job processor
+    command: >
+      sh -c "
+        echo 'Worker container ready. Connect with BullMQ via REDIS_URL' &&
+        tail -f /dev/null
+      "
+
+  # ─── MinIO (S3-compatible Object Storage) ───
+  minio:
+    image: minio/minio:latest
+    container_name: sim24-minio
+    restart: unless-stopped
+    networks:
+      - sim24-net
+    logging: *default-logging
+    <<: *minio-resources
+    environment:
+      MINIO_ROOT_USER: ${MINIO_ROOT_USER:?err}
+      MINIO_ROOT_PASSWORD: ${MINIO_ROOT_PASSWORD:?err}
+    ports:
+      - "127.0.0.1:9000:9000"   # MinIO API
+      - "127.0.0.1:${MINIO_CONSOLE_PORT:-9001}:9001"  # MinIO Console
+    volumes:
+      - miniodata:/data
+    command: server /data --console-address ":9001"
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:9000/minio/health/live"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 30s
+
+  # ─── Create MinIO bucket on startup ───
+  minio-setup:
+    image: minio/mc:latest
+    container_name: sim24-minio-setup
+    restart: "no"
+    networks:
+      - sim24-net
+    depends_on:
+      minio:
+        condition: service_healthy
+    environment:
+      MINIO_ENDPOINT: ${MINIO_ENDPOINT:-http://minio:9000}
+      MINIO_ROOT_USER: ${MINIO_ROOT_USER:?err}
+      MINIO_ROOT_PASSWORD: ${MINIO_ROOT_PASSWORD:?err}
+      MINIO_BUCKET: ${MINIO_BUCKET:-sim24-uploads}
+    entrypoint: |
+      sh -c "
+        echo 'Setting up MinIO buckets...' &&
+        mc alias set sim24 http://minio:9000 ${MINIO_ROOT_USER} ${MINIO_ROOT_PASSWORD} &&
+        mc mb sim24/${MINIO_BUCKET:-sim24-uploads} --ignore-existing &&
+        mc policy set public sim24/${MINIO_BUCKET:-sim24-uploads} &&
+        echo 'MinIO bucket created: ${MINIO_BUCKET:-sim24-uploads}' &&
+        echo 'Setup complete.'
+      "
+
+  # ─── Nginx Load Balancer ───
+  nginx:
+    image: nginx:1.25-alpine
+    container_name: sim24-nginx
+    restart: unless-stopped
+    networks:
+      - sim24-net
+    logging: *default-logging
+    <<: *exporter-resources
+    mem_limit: ${NGINX_MEM_LIMIT:-128M}
+    cpus: 0.3
+    ports:
+      - "${NGINX_PORT:-80}:80"
+      - "443:443"
+    volumes:
+      - ./nginx/nginx.conf:/etc/nginx/conf.d/default.conf:ro
+      # The nginxlogs named volume caused a read‑only file‑system error on some
+      # Windows hosts. Disabling it avoids the startup failure.
+      # - nginxlogs:/var/log/nginx
+      - nginx-cache:/var/cache/nginx
+    depends_on:
+      - app1
+      - app2
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:80/"]
+      interval: 15s
+      timeout: 5s
+      retries: 3
+
+  # ─── Prometheus (Metrics Collection) ───
+  prometheus:
+    image: prom/prometheus:v2.53.0
+    container_name: sim24-prometheus
+    restart: unless-stopped
+    networks:
+      - sim24-net
+    logging: *default-logging
+    mem_limit: ${PROMETHEUS_MEM_LIMIT:-512M}
+    mem_reservation: 256M
+    cpus: 0.5
+    ports:
+      - "127.0.0.1:9090:9090"
+    volumes:
+      - ./prometheus/prometheus.yml:/etc/prometheus/prometheus.yml:ro
+      - ./prometheus/alerts.yml:/etc/prometheus/alerts.yml:ro
+      - promdata:/prometheus
+    command:
+      - "--config.file=/etc/prometheus/prometheus.yml"
+      - "--storage.tsdb.path=/prometheus"
+      - "--storage.tsdb.retention.time=30d"
+      - "--web.console.libraries=/usr/share/prometheus/console_libraries"
+      - "--web.console.templates=/usr/share/prometheus/consoles"
+    depends_on:
+      - app1
+      - app2
+
+  # ─── Node Exporter (Host metrics) ───
+  node-exporter:
+    image: prom/node-exporter:v1.8.1
+    container_name: sim24-node-exporter
+    restart: unless-stopped
+    networks:
+      - sim24-net
+    logging: *default-logging
+    <<: *exporter-resources
+    ports:
+      - "127.0.0.1:9100:9100"
+    volumes:
+      - /proc:/host/proc:ro
+      - /sys:/host/sys:ro
+      - /:/rootfs:ro
+    command:
+      - "--path.procfs=/host/proc"
+      - "--path.sysfs=/host/sys"
+      - "--path.rootfs=/rootfs"
+      - "--collector.filesystem.mount-points-exclude=^/(sys|proc|dev|host|etc)($$|/)"
+
+  # ─── Postgres Exporter ───
+  postgres-exporter:
+    image: prometheuscommunity/postgres-exporter:v0.15.0
+    container_name: sim24-postgres-exporter
+    restart: unless-stopped
+    networks:
+      - sim24-net
+    logging: *default-logging
+    <<: *exporter-resources
+    ports:
+      - "127.0.0.1:9187:9187"
+    environment:
+      DATA_SOURCE_NAME: "postgresql://${POSTGRES_USER:-sim24}:${POSTGRES_PASSWORD:?err}@postgres:5432/${POSTGRES_DB:-sim24}?sslmode=disable"
+    depends_on:
+      postgres:
+        condition: service_healthy
+
+  # ─── Redis Exporter ───
+  redis-exporter:
+    image: oliver006/redis_exporter:v1.63.0
+    container_name: sim24-redis-exporter
+    restart: unless-stopped
+    networks:
+      - sim24-net
+    logging: *default-logging
+    <<: *exporter-resources
+    ports:
+      - "127.0.0.1:9121:9121"
+    environment:
+      REDIS_ADDR: redis://redis:6379
+    depends_on:
+      redis:
+        condition: service_healthy
+
+  # ─── Nginx Exporter ───
+  nginx-exporter:
+    image: nginx/nginx-prometheus-exporter:1.3.0
+    container_name: sim24-nginx-exporter
+    restart: unless-stopped
+    networks:
+      - sim24-net
+    logging: *default-logging
+    <<: *exporter-resources
+    ports:
+      - "127.0.0.1:9113:9113"
+    environment:
+      NGINX_STATUS: "http://nginx:80/"
+    depends_on:
+      - nginx
+
+  # ─── cAdvisor (Container metrics) ─── (disabled due to pull issues)
+  # cadvisor:
+  #   image: gcr.io/cadvisor/cadvisor:v0.49.1
+  #   container_name: sim24-cadvisor
+  #   restart: unless-stopped
+  #   networks:
+  #     - sim24-net
+  #   logging: *default-logging
+  #   <<: *exporter-resources
+  #   ports:
+  #     - "127.0.0.1:8080:8080"
+  #   volumes:
+  #     - /:/rootfs:ro
+  #     - /var/run:/var/run:ro
+  #     - /sys:/sys:ro
+  #     - /var/lib/docker/:/var/lib/docker:ro
+  #     - /dev/disk/:/dev/disk:ro
+  #   privileged: true
+
+  # ─── Grafana (Visualization) ───
+  grafana:
+    image: grafana/grafana:11.1.0
+    container_name: sim24-grafana
+    restart: unless-stopped
+    networks:
+      - sim24-net
+    logging: *default-logging
+    mem_limit: ${GRAFANA_MEM_LIMIT:-256M}
+    mem_reservation: 128M
+    cpus: 0.3
+    ports:
+      - "${GRAFANA_PORT:-3001}:3000"
+    environment:
+      GF_SECURITY_ADMIN_USER: ${GRAFANA_ADMIN_USER:-admin}
+      GF_SECURITY_ADMIN_PASSWORD: ${GRAFANA_ADMIN_PASSWORD:-admin}
+      GF_INSTALL_PLUGINS: grafana-piechart-panel
+      GF_AUTH_DISABLE_LOGIN_FORM: "false"
+      GF_AUTH_ANONYMOUS_ENABLED: "false"
+      GF_SERVER_ROOT_URL: http://localhost:${GRAFANA_PORT:-3001}
+    volumes:
+      - grafanadata:/var/lib/grafana
+      - ./grafana/dashboards:/etc/grafana/provisioning/dashboards:ro
+      - ./grafana/datasources:/etc/grafana/provisioning/datasources:ro
+      - ./grafana/notifiers:/etc/grafana/provisioning/notifiers:ro
+    depends_on:
+      - prometheus
+      - loki
+
+  # ─── Grafana Loki (Log Aggregation) ───
+  loki:
+    image: grafana/loki:3.1.0
+    container_name: sim24-loki
+    restart: unless-stopped
+    networks:
+      - sim24-net
+    logging: *default-logging
+    mem_limit: ${LOKI_MEM_LIMIT:-512M}
+    mem_reservation: 256M
+    cpus: 0.5
+    ports:
+      - "127.0.0.1:3100:3100"
+    volumes:
+      - ./loki/loki-config.yml:/etc/loki/loki-config.yml:ro
+      - lokidata:/loki
+    command:
+      - "-config.file=/etc/loki/loki-config.yml"
+    healthcheck:
+      test: ["CMD", "wget", "-q", "--tries=1", "-O-", "http://localhost:3100/ready"]
+      interval: 15s
+      timeout: 5s
+      retries: 3
+      start_period: 30s
+
+  # ─── Promtail (Log Collector) ───
+  promtail:
+    image: grafana/promtail:3.1.0
+    container_name: sim24-promtail
+    restart: unless-stopped
+    networks:
+      - sim24-net
+    logging: *default-logging
+    <<: *exporter-resources
+    mem_limit: 256M
+    volumes:
+      - ./loki/promtail-config.yml:/etc/promtail/promtail-config.yml:ro
+      - /var/log:/var/log:ro
+      - /var/lib/docker/containers:/var/lib/docker/containers:ro
+      - nginxlogs:/var/log/nginx:ro
+    command:
+      - "-config.file=/etc/promtail/promtail-config.yml"
+    depends_on:
+      - loki
+
+  # ─── Automated PostgreSQL Backup ───
+  backup:
+    image: postgres:15-alpine
+    container_name: sim24-backup
+    restart: unless-stopped
+    networks:
+      - sim24-net
+    logging: *default-logging
+    <<: *exporter-resources
+    mem_limit: 256M
+    environment:
+      POSTGRES_USER: ${POSTGRES_USER:-sim24}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?err}
+      POSTGRES_DB: ${POSTGRES_DB:-sim24}
+      BACKUP_DIR: /backups
+      RETENTION_DAYS: ${BACKUP_RETENTION_DAYS:-14}
+      REMOTE_BACKUP_ENDPOINT: ${REMOTE_BACKUP_ENDPOINT:-}
+      REMOTE_BACKUP_BUCKET: ${REMOTE_BACKUP_BUCKET:-}
+      REMOTE_BACKUP_ACCESS_KEY: ${REMOTE_BACKUP_ACCESS_KEY:-}
+      REMOTE_BACKUP_SECRET_KEY: ${REMOTE_BACKUP_SECRET_KEY:-}
+      POSTGRES_HOST: postgres
+    volumes:
+      - pgbackups:/backups
+      - ./scripts/backup.sh:/usr/local/bin/backup.sh:ro
+      - ./scripts/backup-restore.sh:/usr/local/bin/backup-restore.sh:ro
+    entrypoint: |
+      sh -c "
+        echo '0 3 * * * /usr/local/bin/backup.sh >> /var/log/cron.log 2>&1' > /etc/crontabs/root &&
+        echo '30 3 * * 0 /usr/local/bin/backup.sh --remote >> /var/log/cron.log 2>&1' >> /etc/crontabs/root &&
+        echo 'Backup scheduler started. Daily at 03:00, weekly remote at 03:30 Sun.' &&
+        crond -f -l 2
+      "
+    depends_on:
+      postgres:
+        condition: service_healthy
+
+volumes:
+  pgdata:
+    driver: local
+  redisdata:
+    driver: local
+  miniodata:
+    driver: local
+  promdata:
+    driver: local
+  grafanadata:
+    driver: local
+  lokidata:
+    driver: local
+  pgbackups:
+    driver: local
+  nginxlogs:
+    driver: local
+  nginx-cache:
+    driver: local

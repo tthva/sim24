@@ -1,0 +1,136 @@
+# ============================
+# SIM24 — Prometheus Alerting Rules
+# ============================
+
+groups:
+  - name: sim24_app_alerts
+    interval: 30s
+    rules:
+      - alert: AppDown
+        expr: up{job="app"} == 0
+        for: 1m
+        annotations:
+          summary: "SIM24 App instance is down"
+          description: "App instance {{ $labels.instance }} has been down for more than 1 minute."
+        labels:
+          severity: critical
+
+      - alert: HighErrorRate
+        expr: rate(http_requests_total{job="app", status=~"5.."}[5m]) / rate(http_requests_total{job="app"}[5m]) * 100 > 5
+        for: 5m
+        annotations:
+          summary: "High HTTP error rate"
+          description: "Error rate is {{ $value }}% for the last 5 minutes (> 5% threshold)."
+        labels:
+          severity: warning
+
+      - alert: HighLatency
+        expr: histogram_quantile(0.95, rate(http_request_duration_seconds_bucket[5m])) > 2
+        for: 5m
+        annotations:
+          summary: "High request latency"
+          description: "95th percentile latency is {{ $value }}s (> 2s threshold)."
+        labels:
+          severity: warning
+
+  - name: sim24_db_alerts
+    interval: 30s
+    rules:
+      - alert: PostgresDown
+        expr: up{job="postgres"} == 0
+        for: 1m
+        annotations:
+          summary: "PostgreSQL is down"
+          description: "PostgreSQL instance has been unreachable for more than 1 minute."
+        labels:
+          severity: critical
+
+      - alert: PostgresHighConnections
+        expr: pg_stat_database_numbackends{datname="sim24"} > 80
+        for: 5m
+        annotations:
+          summary: "High database connections"
+          description: "PostgreSQL has {{ $value }} active connections (> 80 threshold)."
+        labels:
+          severity: warning
+
+      - alert: PostgresDiskFull
+        expr: (container_fs_usage_bytes{container="sim24-db"} / container_fs_limit_bytes{container="sim24-db"}) * 100 > 85
+        for: 5m
+        annotations:
+          summary: "PostgreSQL disk space critical"
+          description: "Disk usage is {{ $value }}% (> 85% threshold)."
+        labels:
+          severity: critical
+
+  - name: sim24_redis_alerts
+    interval: 30s
+    rules:
+      - alert: RedisDown
+        expr: up{job="redis"} == 0
+        for: 1m
+        annotations:
+          summary: "Redis is down"
+          description: "Redis instance has been unreachable for more than 1 minute."
+        labels:
+          severity: critical
+
+      - alert: RedisMemoryHigh
+        expr: redis_memory_used_bytes / redis_memory_max_bytes * 100 > 80
+        for: 5m
+        annotations:
+          summary: "Redis memory usage high"
+          description: "Redis memory usage is {{ $value }}% (> 80% threshold)."
+        labels:
+          severity: warning
+
+  - name: sim24_system_alerts
+    interval: 30s
+    rules:
+      - alert: HighCPUUsage
+        expr: 100 - (avg by(instance) (rate(node_cpu_seconds_total{mode="idle"}[5m])) * 100) > 85
+        for: 10m
+        annotations:
+          summary: "High CPU usage on host"
+          description: "CPU usage is {{ $value }}% (> 85% for 10 minutes)."
+        labels:
+          severity: warning
+
+      - alert: HighMemoryUsage
+        expr: (1 - (node_memory_MemAvailable_bytes / node_memory_MemTotal_bytes)) * 100 > 85
+        for: 5m
+        annotations:
+          summary: "High memory usage on host"
+          description: "Memory usage is {{ $value }}% (> 85% threshold)."
+        labels:
+          severity: warning
+
+      - alert: DiskSpaceLow
+        expr: (node_filesystem_avail_bytes{mountpoint="/"} / node_filesystem_size_bytes{mountpoint="/"}) * 100 < 15
+        for: 5m
+        annotations:
+          summary: "Low disk space"
+          description: "Available disk space is {{ $value }}% (< 15% threshold)."
+        labels:
+          severity: critical
+
+      - alert: ContainerRestarting
+        expr: rate(container_last_seen{container=~"sim24-.*"}[15m]) > 0
+        for: 5m
+        annotations:
+          summary: "Container is restarting frequently"
+          description: "Container {{ $labels.container }} has restarted."
+        labels:
+          severity: warning
+
+  - name: sim24_backup_alerts
+    interval: 1m
+    rules:
+      - alert: BackupFailed
+        expr: time() - backup_last_success_timestamp > 86400
+        for: 6h
+        annotations:
+          summary: "Database backup has not completed in 24 hours"
+          description: "Last successful backup was over 24 hours ago."
+        labels:
+          severity: critical

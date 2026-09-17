@@ -1,0 +1,103 @@
+# ============================
+# SIM24 — Prometheus Configuration
+# ============================
+
+global:
+  scrape_interval:     15s
+  evaluation_interval: 15s
+  scrape_timeout:      10s
+
+  external_labels:
+    monitor: 'sim24'
+    env: 'production'
+
+# Alerting configuration
+alerting:
+  alertmanagers:
+    - static_configs:
+        - targets: []
+          # Add Alertmanager container here when ready
+          # - alertmanager:9093
+
+# Rule files
+rule_files:
+  - "/etc/prometheus/alerts.yml"
+
+scrape_configs:
+  # ─── Self-monitoring ───
+  - job_name: 'prometheus'
+    static_configs:
+      - targets: ['localhost:9090']
+        labels:
+          service: 'prometheus'
+          env: 'production'
+
+  # ─── Node metrics (from the host via node_exporter) ───
+  - job_name: 'node'
+    scrape_interval: 30s
+    static_configs:
+      - targets: ['node-exporter:9100']
+        labels:
+          service: 'node'
+          env: 'production'
+
+  # ─── PostgreSQL metrics ───
+  - job_name: 'postgres'
+    static_configs:
+      - targets: ['postgres-exporter:9187']
+        labels:
+          service: 'postgres'
+          env: 'production'
+
+  # ─── Redis metrics ───
+  - job_name: 'redis'
+    static_configs:
+      - targets: ['redis-exporter:9121']
+        labels:
+          service: 'redis'
+          env: 'production'
+
+  # ─── Nginx metrics ───
+  - job_name: 'nginx'
+    static_configs:
+      - targets: ['nginx-exporter:9113']
+        labels:
+          service: 'nginx'
+          env: 'production'
+
+  # ─── Next.js App Instance 1 ───
+  - job_name: 'app1'
+    metrics_path: '/api/metrics'
+    static_configs:
+      - targets: ['app1:3000']
+        labels:
+          service: 'sim24-app'
+          instance: 'app1'
+          env: 'production'
+
+  # ─── Next.js App Instance 2 ───
+  - job_name: 'app2'
+    metrics_path: '/api/metrics'
+    static_configs:
+      - targets: ['app2:3000']
+        labels:
+          service: 'sim24-app'
+          instance: 'app2'
+          env: 'production'
+
+  # ─── Docker container metrics (via cadvisor) ───
+  - job_name: 'cadvisor'
+    scrape_interval: 30s
+    static_configs:
+      - targets: ['cadvisor:8080']
+        labels:
+          service: 'docker'
+          env: 'production'
+
+  # ─── Loki metrics ───
+  - job_name: 'loki'
+    static_configs:
+      - targets: ['loki:3100']
+        labels:
+          service: 'loki'
+          env: 'production'

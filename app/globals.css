@@ -1,0 +1,372 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+/* Vazirmatn Font Face */
+@font-face {
+  font-family: "Vazirmatn";
+  src: url("/fonts/Vazirmatn/fonts/webfonts/Vazirmatn-Thin.woff2") format("woff2");
+  font-weight: 100;
+  font-style: normal;
+  font-display: swap;
+}
+@font-face {
+  font-family: "Vazirmatn";
+  src: url("/fonts/Vazirmatn/fonts/webfonts/Vazirmatn-ExtraLight.woff2") format("woff2");
+  font-weight: 200;
+  font-style: normal;
+  font-display: swap;
+}
+@font-face {
+  font-family: "Vazirmatn";
+  src: url("/fonts/Vazirmatn/fonts/webfonts/Vazirmatn-Light.woff2") format("woff2");
+  font-weight: 300;
+  font-style: normal;
+  font-display: swap;
+}
+@font-face {
+  font-family: "Vazirmatn";
+  src: url("/fonts/Vazirmatn/fonts/webfonts/Vazirmatn-Regular.woff2") format("woff2");
+  font-weight: 400;
+  font-style: normal;
+  font-display: swap;
+}
+@font-face {
+  font-family: "Vazirmatn";
+  src: url("/fonts/Vazirmatn/fonts/webfonts/Vazirmatn-Medium.woff2") format("woff2");
+  font-weight: 500;
+  font-style: normal;
+  font-display: swap;
+}
+@font-face {
+  font-family: "Vazirmatn";
+  src: url("/fonts/Vazirmatn/fonts/webfonts/Vazirmatn-SemiBold.woff2") format("woff2");
+  font-weight: 600;
+  font-style: normal;
+  font-display: swap;
+}
+@font-face {
+  font-family: "Vazirmatn";
+  src: url("/fonts/Vazirmatn/fonts/webfonts/Vazirmatn-Bold.woff2") format("woff2");
+  font-weight: 700;
+  font-style: normal;
+  font-display: swap;
+}
+@font-face {
+  font-family: "Vazirmatn";
+  src: url("/fonts/Vazirmatn/fonts/webfonts/Vazirmatn-ExtraBold.woff2") format("woff2");
+  font-weight: 800;
+  font-style: normal;
+  font-display: swap;
+}
+@font-face {
+  font-family: "Vazirmatn";
+  src: url("/fonts/Vazirmatn/fonts/webfonts/Vazirmatn-Black.woff2") format("woff2");
+  font-weight: 900;
+  font-style: normal;
+  font-display: swap;
+}
+@font-face {
+  font-family: "Vazirmatn";
+  src: url("/fonts/Vazirmatn/fonts/webfonts/Vazirmatn[wght].woff2") format("woff2");
+  font-weight: 100 900;
+  font-style: normal;
+  font-display: swap;
+}
+
+
+* {
+  box-sizing: border-box;
+}
+html,
+body {
+  direction: rtl;
+  margin: 0;
+  padding: 0;
+  background: #11223d;
+}
+html {
+  min-height: 100dvh;
+}
+body {
+  min-height: 100dvh;
+}
+
+:root {
+  --main-color: #1c3968;
+  --secondary-color: #11223d;
+}
+
+.gc {
+  background: linear-gradient(
+    180deg,
+    rgba(217, 217, 217, 0.2) 0%,
+    rgba(115, 115, 115, 0) 100%
+  );
+  border: 2px solid #88ffa4;
+  border-radius: 24px;
+  position: relative;
+}
+.gc::before {
+  content: "";
+  position: absolute;
+  inset: 0;
+  border: 6px solid #737373; /* changed from green to white */
+  border-radius: 24px;
+  filter: blur(8px);
+  pointer-events: none;
+  z-index: 0;
+}
+.gcs {
+  background: linear-gradient(
+    180deg,
+    rgba(217, 217, 217, 0.2) 0%,
+    rgba(115, 115, 115, 0) 100%
+  );
+  border: 1.5px solid #88ffa4;
+  border-radius: 8px;
+  position: relative;
+}
+.gcs::before {
+  content: "";
+  position: absolute;
+  inset: 0;
+  border: 6px solid rgba(255, 255, 255, 0.7); /* changed from green to white */
+  border-radius: 8px;
+  filter: blur(4px);
+  pointer-events: none;
+  z-index: 0;
+}
+
+/* Input base */
+.inf {
+  background: #636363;
+  border: 1px solid #fff;
+  border-radius: 8px;
+  width: 100%;
+  height: 42px;
+  color: #fff;
+  padding: 0 12px;
+  font-family: "Vazirmatn", sans-serif;
+  font-size: 14px;
+  outline: none;
+  text-align: right;
+  transition:
+    border-color 0.2s,
+    box-shadow 0.2s,
+    background 0.2s;
+  direction: rtl;
+}
+.inf:focus {
+  border-color: #51bb70;
+}
+.inf::placeholder {
+  color: #aaa;
+}
+
+/* Valid input - white glow (changed from green) */
+.inf.valid {
+  border-color: #88ffa4 !important;
+  box-shadow: 0 0 0 2px rgba(255, 255, 255, 0.25); /* changed from green to white */
+  background: #3a6348;
+}
+/* Invalid input - red glow */
+.inf.invalid {
+  border-color: #ff6b6b !important;
+  box-shadow: 0 0 0 2px rgba(255, 107, 107, 0.25);
+  background: #5c3232;
+}
+
+.ba {
+  background: #51bb70;
+  border-radius: 12px;
+  color: #011b2c;
+  font-family: "Vazirmatn", sans-serif;
+  font-weight: 700;
+  font-size: 14px;
+  padding: 10px 24px;
+  border: none;
+  cursor: pointer;
+  height: 44px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  transition:
+    background 0.2s,
+    transform 0.1s;
+}
+.ba:hover {
+  background: #3da85f;
+}
+.ba:active {
+  transform: scale(0.97);
+}
+.pb {
+  background: linear-gradient(
+    180deg,
+    var(--main-color) 0%,
+    var(--secondary-color) 100%
+  );
+  min-height: 100dvh;
+}
+.nb {
+  background: linear-gradient(
+    180deg,
+    rgba(217, 217, 217, 0.2) 0%,
+    rgba(115, 115, 115, 0) 100%
+  );
+  border-radius: 24px 24px 0 0;
+}
+.rc {
+  width: 24px;
+  height: 24px;
+  border: 2px solid #51bb70;
+  border-radius: 50%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  filter: drop-shadow(0 0 4px #23e250);
+}
+.rc::after {
+  content: "";
+  width: 14px;
+  height: 14px;
+  background: #51bb70;
+  border-radius: 50%;
+}
+.ru {
+  width: 24px;
+  height: 24px;
+  border: 2px solid #fff;
+  border-radius: 50%;
+}
+
+/* Float label — sits ON the border line, no background box */
+.input-wrapper {
+  position: relative;
+  width: 100%;
+}
+.input-wrapper .inf {
+  padding-top: 6px;
+}
+.float-label {
+  position: absolute;
+  top: -9px;
+  right: 12px;
+  color: #fff;
+  font-size: 11px;
+  font-family: "Vazirmatn", sans-serif;
+  padding: 0 4px;
+  pointer-events: none;
+  z-index: 2;
+  white-space: nowrap;
+  /* Transparent background that matches the input border visually — no colored box */
+  background: transparent;
+  /* Text shadow so it's readable on any bg */
+  text-shadow:
+    0 0 6px rgba(17, 34, 61, 1),
+    0 0 3px rgba(17, 34, 61, 1),
+    0 0 2px rgba(17, 34, 61, 1);
+}
+
+@keyframes fadeUp {
+  from {
+    opacity: 0;
+    transform: translateY(24px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+@keyframes fadeSlideIn {
+  from {
+    opacity: 0;
+    transform: translateY(24px) scale(0.98);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0) scale(1);
+  }
+}
+@keyframes modalSlideUp {
+  from {
+    opacity: 0;
+    transform: translateY(40px) scale(0.95);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0) scale(1);
+  }
+}
+@keyframes glowPulse {
+  0%, 100% {
+    box-shadow: 0 0 8px rgba(81, 187, 112, 0.2);
+  }
+  50% {
+    box-shadow: 0 0 20px rgba(81, 187, 112, 0.4);
+  }
+}
+@keyframes fadeIn {
+  from {
+    opacity: 0;
+  }
+  to {
+    opacity: 1;
+  }
+}
+@keyframes slideDown {
+  from {
+    opacity: 0;
+    transform: translateY(-16px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+.afu {
+  animation: fadeUp 0.45s ease both;
+}
+.afi {
+  animation: fadeIn 0.35s ease both;
+}
+.asd {
+  animation: slideDown 0.35s ease both;
+}
+.d1 {
+  animation-delay: 0.05s;
+}
+.d2 {
+  animation-delay: 0.1s;
+}
+.d3 {
+  animation-delay: 0.15s;
+}
+.d4 {
+  animation-delay: 0.2s;
+}
+.d5 {
+  animation-delay: 0.25s;
+}
+.d6 {
+  animation-delay: 0.3s;
+}
+
+.menu-card {
+  transition:
+    transform 0.2s,
+    box-shadow 0.2s;
+}
+.menu-card:hover {
+  transform: translateY(-4px) scale(1.03);
+  box-shadow: 0 8px 24px rgba(81, 187, 112, 0.25);
+}
+.menu-card:active {
+  transform: scale(0.97);
+}
+.fieldset-wrapper input,
+.fieldset-wrapper input:focus {
+  background: transparent !important;
+}
