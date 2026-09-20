@@ -5,9 +5,16 @@ node_modules
 *.md
 .env
 .env.local
-.env.*.local
+.env.*
+logs
 *.log
 .DS_Store
 .gitkeep
 dev.db
 query
+tools
+scripts/_*
+.git.backup_*
+docs
+tests
+.mcp-adr-cache
