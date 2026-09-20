@@ -21,6 +21,7 @@ import { mergeMetadataWithIdempotency } from "@/lib/forms/idempotency";
 import { invalidateSearchCache } from "@/lib/search-cache";
 import { apiError, apiSuccess } from "@/lib/forms/response";
 import { formatFaDateTime } from "@/lib/date-fa";
+import { hookCrmFormSubmission } from "@/lib/crm/form-hook";
 import { assessPriceSearchRisk } from "@/lib/phone-risk";
 
 const searchFormSchema = z.object({
@@ -270,6 +271,15 @@ export async function POST(req: NextRequest) {
 
     // Fix 3: Invalidate search cache on successful form submission
     await invalidateSearchCache("sim");
+
+    // CRM (Phase 1): upsert customer + log interaction — never breaks the form
+    await hookCrmFormSubmission({
+      phone: normalized.phone,
+      fullName: normalized.fullName,
+      formType: normalized.formType,
+      customerFormId: customerForm.id,
+      agentId,
+    });
 
     return apiSuccess(
       {

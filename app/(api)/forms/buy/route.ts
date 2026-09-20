@@ -20,6 +20,7 @@ import {
 } from "@/lib/forms/idempotency";
 import { invalidateSearchCache } from "@/lib/search-cache";
 import { formatFaDateTime } from "@/lib/date-fa";
+import { hookCrmFormSubmission } from "@/lib/crm/form-hook";
 
 // Zod schema for buy form validation (direct)
 const positiveNumericString = (label: string) =>
@@ -320,6 +321,15 @@ export async function POST(req: NextRequest) {
 
     // ابطال کش پس از ثبت موفق فرم خرید
     await invalidateSearchCache("sim");
+
+    // CRM (Phase 1): upsert customer + log interaction — never breaks the form
+    await hookCrmFormSubmission({
+      phone: normalized.phone,
+      fullName: normalized.fullName,
+      formType: normalized.formType,
+      customerFormId: result.id,
+      agentId,
+    });
 
     return apiSuccess(
       {

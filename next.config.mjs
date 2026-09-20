@@ -13,6 +13,14 @@ const nextConfig = {
 
   async rewrites() {
     return [
+      // CRM API (app/api/crm/**) must be reached verbatim: the generic rewrite
+      // below strips "/api", which would collide with the /crm UI pages
+      // (page wins over dynamic routes after rewriting). First match wins,
+      // so this pass-through protects the CRM API namespace.
+      {
+        source: "/api/crm/:path*",
+        destination: "/api/crm/:path*",
+      },
       {
         source: "/api/:path*",
         destination: "/:path*",

@@ -31,6 +31,8 @@ model User {
   workflowVersions        WorkflowVersion[]      @relation("VersionCreator")
   createdWorkflows        Workflow[]             @relation("WorkflowCreator")
   updatedWorkflows        Workflow[]             @relation("WorkflowUpdater")
+  crmNotesAuthored        CustomerNote[]         @relation("CrmNoteAuthor")
+  crmDocumentsUploaded    CustomerDocument[]     @relation("CrmDocUploader")
 
   @@index([userType])
   @@index([active])
@@ -38,18 +40,18 @@ model User {
 }
 
 model Session {
-  id              String    @id @default(uuid()) @db.Uuid
-  userId          String?   @db.Uuid  // Optional: null for EndUser sessions
-  endUserId       String?   @db.Uuid  // Optional: for EndUser authentication
-  refreshFamily   String    @unique
-  userAgent       String?
-  ipAddress       String?
-  lastUsedAt      DateTime?
-  revokedAt       DateTime?
-  createdAt       DateTime  @default(now())
-  user            User?     @relation(fields: [userId], references: [id], onDelete: Cascade)
-  endUser         EndUser?  @relation(fields: [endUserId], references: [id], onDelete: Cascade)
-  refreshTokens   RefreshToken[]
+  id            String         @id @default(uuid()) @db.Uuid
+  userId        String?        @db.Uuid // Optional: null for EndUser sessions
+  endUserId     String?        @db.Uuid // Optional: for EndUser authentication
+  refreshFamily String         @unique
+  userAgent     String?
+  ipAddress     String?
+  lastUsedAt    DateTime?
+  revokedAt     DateTime?
+  createdAt     DateTime       @default(now())
+  user          User?          @relation(fields: [userId], references: [id], onDelete: Cascade)
+  endUser       EndUser?       @relation(fields: [endUserId], references: [id], onDelete: Cascade)
+  refreshTokens RefreshToken[]
 
   @@index([userId])
   @@index([endUserId])
@@ -58,19 +60,19 @@ model Session {
 }
 
 model RefreshToken {
-  id            String    @id @default(uuid()) @db.Uuid
-  userId        String?   @db.Uuid  // Optional: null for EndUser refresh tokens
-  endUserId     String?   @db.Uuid  // Optional: for EndUser authentication
-  sessionId     String    @db.Uuid
-  tokenHash     String    @unique
-  family        String
-  expiresAt     DateTime
-  consumedAt    DateTime?
-  revokedAt     DateTime?
-  createdAt     DateTime  @default(now())
-  user          User?     @relation(fields: [userId], references: [id], onDelete: Cascade)
-  endUser       EndUser?  @relation(fields: [endUserId], references: [id], onDelete: Cascade)
-  session       Session   @relation(fields: [sessionId], references: [id], onDelete: Cascade)
+  id         String    @id @default(uuid()) @db.Uuid
+  userId     String?   @db.Uuid // Optional: null for EndUser refresh tokens
+  endUserId  String?   @db.Uuid // Optional: for EndUser authentication
+  sessionId  String    @db.Uuid
+  tokenHash  String    @unique
+  family     String
+  expiresAt  DateTime
+  consumedAt DateTime?
+  revokedAt  DateTime?
+  createdAt  DateTime  @default(now())
+  user       User?     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  endUser    EndUser?  @relation(fields: [endUserId], references: [id], onDelete: Cascade)
+  session    Session   @relation(fields: [sessionId], references: [id], onDelete: Cascade)
 
   @@index([userId])
   @@index([endUserId])
@@ -92,18 +94,19 @@ model Admin {
 }
 
 model Agent {
-  id                String             @id @default(uuid()) @db.Uuid
-  userId            String             @unique @db.Uuid
-  department        Department
-  adminId           String?            @db.Uuid
-  active            Boolean            @default(true)
-  createdAt         DateTime           @default(now())
-  updatedAt         DateTime           @updatedAt
-  admin             Admin?             @relation(fields: [adminId], references: [id])
-  user              User               @relation(fields: [userId], references: [id], onDelete: Cascade)
-  forms             CustomerForm[]
-  notifications     Notification[]
-  workflowInstances WorkflowInstance[]
+  id                   String             @id @default(uuid()) @db.Uuid
+  userId               String             @unique @db.Uuid
+  department           Department
+  adminId              String?            @db.Uuid
+  active               Boolean            @default(true)
+  createdAt            DateTime           @default(now())
+  updatedAt            DateTime           @updatedAt
+  admin                Admin?             @relation(fields: [adminId], references: [id])
+  user                 User               @relation(fields: [userId], references: [id], onDelete: Cascade)
+  forms                CustomerForm[]
+  notifications        Notification[]
+  workflowInstances    WorkflowInstance[]
+  crmReferredCustomers Customer[]         @relation("CustomerReferral")
 
   @@index([department])
   @@index([adminId])
@@ -161,7 +164,7 @@ model UserRoleAssignment {
 }
 
 model CustomerForm {
-  id              String   @id @default(cuid())
+  id              String       @id @default(cuid())
   phone           String?
   fullName        String?
   nationalId      String?
@@ -169,11 +172,11 @@ model CustomerForm {
   formData        Json
   metadata        Json?
   workflowCode    String?
-  workflowStarted Boolean  @default(false)
-  agentId         String?  @db.Uuid
-  createdAt       DateTime @default(now())
-  updatedAt       DateTime @updatedAt
-  agent           Agent?   @relation(fields: [agentId], references: [id])
+  workflowStarted Boolean      @default(false)
+  agentId         String?      @db.Uuid
+  createdAt       DateTime     @default(now())
+  updatedAt       DateTime     @updatedAt
+  agent           Agent?       @relation(fields: [agentId], references: [id])
   attachments     Attachment[]
 
   @@index([formType])
@@ -189,16 +192,16 @@ model CustomerForm {
 }
 
 model EndUser {
-  id        String    @id @default(uuid()) @db.Uuid
-  username  String    @unique
-  password  String
-  phone     String?
-  fullName  String?
-  active    Boolean   @default(true)
-  lastLogin DateTime?
-  createdAt DateTime  @default(now())
-  updatedAt DateTime  @updatedAt
-  sessions  Session[]
+  id            String         @id @default(uuid()) @db.Uuid
+  username      String         @unique
+  password      String
+  phone         String?
+  fullName      String?
+  active        Boolean        @default(true)
+  lastLogin     DateTime?
+  createdAt     DateTime       @default(now())
+  updatedAt     DateTime       @updatedAt
+  sessions      Session[]
   refreshTokens RefreshToken[]
 
   @@map("end_users")
@@ -370,16 +373,16 @@ model Notification {
 }
 
 model Attachment {
-  id           String         @id @default(uuid()) @db.Uuid
-  fileKey      String         @unique
+  id           String        @id @default(uuid()) @db.Uuid
+  fileKey      String        @unique
   originalName String
   mimeType     String
   fileSize     Int
   formId       String?
-  uploadedById String         @db.Uuid
-  createdAt    DateTime       @default(now())
-  form         CustomerForm?  @relation(fields: [formId], references: [id])
-  uploadedBy   User           @relation(fields: [uploadedById], references: [id])
+  uploadedById String        @db.Uuid
+  createdAt    DateTime      @default(now())
+  form         CustomerForm? @relation(fields: [formId], references: [id])
+  uploadedBy   User          @relation(fields: [uploadedById], references: [id])
 
   @@index([formId])
   @@index([uploadedById])
@@ -445,19 +448,19 @@ enum RejectBehavior {
 }
 
 model ConsignmentItem {
-  id                String   @id @default(cuid())
-  simNumber         String
-  ownerName         String
-  phone             String
-  price             String?
-  status            String   @default("available") // available, reserved, sold
-  notes             String?
-  duration          Int?     // مدت امانت (روز)
-  source            String   @default("manual") // manual | workflow
-  workflowInstanceId String? @unique // SELL_CONSIGNMENT instance that created this item (per-instance dedupe)
-  deletedAt         DateTime? // soft delete — null = active
-  createdAt         DateTime @default(now())
-  updatedAt         DateTime @updatedAt
+  id                 String    @id @default(cuid())
+  simNumber          String
+  ownerName          String
+  phone              String
+  price              String?
+  status             String    @default("available") // available, reserved, sold
+  notes              String?
+  duration           Int? // مدت امانت (روز)
+  source             String    @default("manual") // manual | workflow
+  workflowInstanceId String?   @unique // SELL_CONSIGNMENT instance that created this item (per-instance dedupe)
+  deletedAt          DateTime? // soft delete — null = active
+  createdAt          DateTime  @default(now())
+  updatedAt          DateTime  @updatedAt
 
   @@map("consignment_items")
 }
@@ -483,4 +486,103 @@ model WhitelistPhone {
 
   @@index([phone])
   @@map("whitelist_phones")
+}
+
+// ─────────────────────────────────────────────
+// CRM — Phase 1: Customer 360
+// ─────────────────────────────────────────────
+
+model Customer {
+  id                 String    @id @default(uuid()) @db.Uuid
+  customerCode       String    @unique // "C-" + 6-digit sequential (crm customer-code generator)
+  fullName           String?
+  primaryPhone       String    @unique
+  secondaryPhone     String?
+  nationalId         String?
+  segment            String    @default("regular") // vip | hot | regular | cold
+  status             String    @default("active") // active | inactive
+  score              Int       @default(0) // engagement score (0-100)
+  source             String? // form source: buy_direct | sell_direct | search | invest_* | manual
+  referralAgentId    String?   @db.Uuid
+  firstInteractionAt DateTime?
+  lastInteractionAt  DateTime?
+  metadata           Json?
+  createdAt          DateTime  @default(now())
+  updatedAt          DateTime  @updatedAt
+
+  interactions  CustomerInteraction[]
+  notes         CustomerNote[]
+  tags          CustomerTag[]
+  documents     CustomerDocument[]
+  referralAgent Agent?                @relation("CustomerReferral", fields: [referralAgentId], references: [id])
+
+  @@index([customerCode])
+  @@index([primaryPhone])
+  @@index([segment])
+  @@index([status])
+  @@index([score])
+  @@index([lastInteractionAt])
+  @@index([createdAt])
+  @@map("crm_customers")
+}
+
+model CustomerInteraction {
+  id              String   @id @default(uuid()) @db.Uuid
+  customerId      String   @db.Uuid
+  interactionType String // form_submission | call | note | meeting | sms | email
+  referenceId     String? // e.g. CustomerForm.id
+  title           String
+  description     String?
+  metadata        Json?
+  createdAt       DateTime @default(now())
+  customer        Customer @relation(fields: [customerId], references: [id], onDelete: Cascade)
+
+  @@index([customerId, createdAt])
+  @@index([interactionType])
+  @@index([referenceId])
+  @@map("crm_customer_interactions")
+}
+
+model CustomerNote {
+  id         String   @id @default(uuid()) @db.Uuid
+  customerId String   @db.Uuid
+  content    String
+  authorId   String?  @db.Uuid
+  pinned     Boolean  @default(false)
+  createdAt  DateTime @default(now())
+  updatedAt  DateTime @updatedAt
+  customer   Customer @relation(fields: [customerId], references: [id], onDelete: Cascade)
+  author     User?    @relation("CrmNoteAuthor", fields: [authorId], references: [id])
+
+  @@index([customerId, createdAt])
+  @@map("crm_customer_notes")
+}
+
+model CustomerTag {
+  id         String   @id @default(uuid()) @db.Uuid
+  customerId String   @db.Uuid
+  tag        String
+  color      String? // hex color for UI badge
+  createdAt  DateTime @default(now())
+  customer   Customer @relation(fields: [customerId], references: [id], onDelete: Cascade)
+
+  @@unique([customerId, tag])
+  @@index([tag])
+  @@map("crm_customer_tags")
+}
+
+model CustomerDocument {
+  id           String   @id @default(uuid()) @db.Uuid
+  customerId   String   @db.Uuid
+  fileKey      String   @unique
+  title        String?
+  mimeType     String?
+  fileSize     Int?
+  uploadedById String?  @db.Uuid
+  createdAt    DateTime @default(now())
+  customer     Customer @relation(fields: [customerId], references: [id], onDelete: Cascade)
+  uploadedBy   User?    @relation("CrmDocUploader", fields: [uploadedById], references: [id])
+
+  @@index([customerId, createdAt])
+  @@map("crm_customer_documents")
 }

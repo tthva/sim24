@@ -8,6 +8,7 @@ import { getWorkflowCodeByFormType } from "@/lib/workflow-code-map";
 import { startWorkflow } from "@/services/workflow.service";
 import { apiError, apiSuccess } from "@/lib/forms/response";
 import { formatFaDateTime } from "@/lib/date-fa";
+import { hookCrmFormSubmission } from "@/lib/crm/form-hook";
 import {
   tryClaimIdempotencyKey,
   completeIdempotencyKey,
@@ -205,6 +206,15 @@ export async function POST(req: NextRequest) {
     if (scopedIdempotencyKey) {
       await completeIdempotencyKey(scopedIdempotencyKey, result.id, { workflowCode, workflowInstanceId });
     }
+
+    // CRM (Phase 1): upsert customer + log interaction — never breaks the form
+    await hookCrmFormSubmission({
+      phone: normalized.phone,
+      fullName: normalized.fullName,
+      formType: canonicalFormType,
+      customerFormId: result.id,
+      agentId,
+    });
 
     return apiSuccess(
       {

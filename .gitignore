@@ -132,3 +132,8 @@ tools/mcp-*/
 scripts/_*.mjs
 scripts/_*.cjs
 scripts/_*.txt
+
+# Backups
+backup_*.dump
+*.dump
+backup_*.sql

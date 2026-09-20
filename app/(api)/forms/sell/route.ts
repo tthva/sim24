@@ -20,6 +20,7 @@ import {
 } from "@/lib/forms/idempotency";
 import { invalidateSearchCache } from "@/lib/search-cache";
 import { formatFaDateTime } from "@/lib/date-fa";
+import { hookCrmFormSubmission } from "@/lib/crm/form-hook";
 
 // --- Zod schemas for each sell tab ---
 
@@ -302,6 +303,15 @@ async function handleSellForm(
   if (scopedIdempotencyKey) {
     await completeIdempotencyKey(scopedIdempotencyKey, customerForm.id, { workflowCode, workflowInstanceId });
   }
+
+  // CRM (Phase 1): upsert customer + log interaction — never breaks the form
+  await hookCrmFormSubmission({
+    phone: normalized.phone,
+    fullName: normalized.fullName,
+    formType: normalized.formType,
+    customerFormId: customerForm.id,
+    agentId,
+  });
 
   return {
     ...customerForm,
