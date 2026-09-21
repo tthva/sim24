@@ -18,7 +18,13 @@ ARG JWT_SECRET=dummy-jwt-secret-for-build
 ENV JWT_SECRET=${JWT_SECRET}
 # Generate Prisma Client before build
 RUN npx prisma generate
-# Build Next.js (with standalone output)
+# Build Next.js (with standalone output).
+# Heap safety-net: Docker builds run with limited RAM (WSL is capped at 3 GB on
+# this host), and the remaining Node work in this stage (prisma generate, SWC
+# transform, asset emission) can still spike memory once the full TS type-check
+# is skipped via next.config.mjs. 1536 MB sits safely under the 3 GB host cap
+# while giving the build ample headroom.
+ENV NODE_OPTIONS=--max-old-space-size=1536
 RUN npm run build
 
 # ─── Stage 3: Runner ───
