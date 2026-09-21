@@ -132,3 +132,8 @@ tools/mcp-*/
 scripts/_*.mjs
 scripts/_*.cjs
 scripts/_*.txt
+
+# Backup folders
+node_modules.backup*
+*.backup_*
+package-lock.json.backup*

@@ -23,7 +23,7 @@ RUN npm run build
 
 # ─── Stage 3: Runner ───
 FROM node:22-alpine AS runner
-RUN apk add --no-cache libc6-compat openssl curl
+RUN apk add --no-cache libc6-compat openssl curl tini
 WORKDIR /app
 ENV NODE_ENV=production
 ENV NEXT_TELEMETRY_DISABLED=1
@@ -52,6 +52,10 @@ ENV HOSTNAME=0.0.0.0
 # Healthcheck: accepts 200 or 401 (auth/check returns 401 without cookie)
 HEALTHCHECK --interval=30s --timeout=5s --start-period=30s --retries=3 \
   CMD curl -s -o /dev/null -w "%{http_code}" http://localhost:3000/api/auth/check | grep -qE '^(200|401)$' || exit 1
+
+# tini as init: Node must not be PID 1, so SIGTERM is forwarded to child
+# processes and zombies are reaped → graceful shutdown within the grace period.
+ENTRYPOINT ["/sbin/tini", "--"]
 
 CMD ["node", "server.js"]
 
