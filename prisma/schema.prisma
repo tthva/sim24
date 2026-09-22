@@ -8,31 +8,35 @@ datasource db {
 }
 
 model User {
-  id                      String                 @id @default(uuid()) @db.Uuid
-  username                String                 @unique
-  password                String
-  fullName                String?
-  phone                   String?
-  email                   String?
-  active                  Boolean                @default(true)
-  userType                UserType
-  tokenVersion            Int                    @default(0)
-  lastLogin               DateTime?
-  createdAt               DateTime               @default(now())
-  updatedAt               DateTime               @updatedAt
-  adminProfile            Admin?
-  agentProfile            Agent?
-  auditLogs               AuditLog[]
-  roleAssignments         UserRoleAssignment[]
-  sessions                Session[]
-  refreshTokens           RefreshToken[]
-  workflowStepAssignments WorkflowStepInstance[] @relation("StepAssignee")
-  attachments             Attachment[]
-  workflowVersions        WorkflowVersion[]      @relation("VersionCreator")
-  createdWorkflows        Workflow[]             @relation("WorkflowCreator")
-  updatedWorkflows        Workflow[]             @relation("WorkflowUpdater")
-  crmNotesAuthored        CustomerNote[]         @relation("CrmNoteAuthor")
-  crmDocumentsUploaded    CustomerDocument[]     @relation("CrmDocUploader")
+  id                       String                 @id @default(uuid()) @db.Uuid
+  username                 String                 @unique
+  password                 String
+  fullName                 String?
+  phone                    String?
+  email                    String?
+  active                   Boolean                @default(true)
+  userType                 UserType
+  tokenVersion             Int                    @default(0)
+  lastLogin                DateTime?
+  createdAt                DateTime               @default(now())
+  updatedAt                DateTime               @updatedAt
+  adminProfile             Admin?
+  agentProfile             Agent?
+  auditLogs                AuditLog[]
+  roleAssignments          UserRoleAssignment[]
+  sessions                 Session[]
+  refreshTokens            RefreshToken[]
+  workflowStepAssignments  WorkflowStepInstance[] @relation("StepAssignee")
+  attachments              Attachment[]
+  workflowVersions         WorkflowVersion[]      @relation("VersionCreator")
+  createdWorkflows         Workflow[]             @relation("WorkflowCreator")
+  updatedWorkflows         Workflow[]             @relation("WorkflowUpdater")
+  crmNotesAuthored         CustomerNote[]         @relation("CrmNoteAuthor")
+  crmDocumentsUploaded     CustomerDocument[]     @relation("CrmDocUploader")
+  communicationsAsOperator Communication[]        @relation("CommunicationOperator")
+  templatesCreated         MessageTemplate[]      @relation("TemplateCreator")
+  activitiesAsAssignee     Activity[]             @relation("ActivityAssignee")
+  recurringTasksAsAssignee RecurringTask[]        @relation("RecurringTaskAssignee")
 
   @@index([userType])
   @@index([active])
@@ -510,11 +514,13 @@ model Customer {
   createdAt          DateTime  @default(now())
   updatedAt          DateTime  @updatedAt
 
-  interactions  CustomerInteraction[]
-  notes         CustomerNote[]
-  tags          CustomerTag[]
-  documents     CustomerDocument[]
-  referralAgent Agent?                @relation("CustomerReferral", fields: [referralAgentId], references: [id])
+  interactions   CustomerInteraction[]
+  notes          CustomerNote[]
+  tags           CustomerTag[]
+  documents      CustomerDocument[]
+  communications Communication[]
+  activities     Activity[]
+  referralAgent  Agent?                @relation("CustomerReferral", fields: [referralAgentId], references: [id])
 
   @@index([customerCode])
   @@index([primaryPhone])
@@ -585,4 +591,105 @@ model CustomerDocument {
 
   @@index([customerId, createdAt])
   @@map("crm_customer_documents")
+}
+
+model Communication {
+  id         String  @id @default(cuid())
+  customerId String  @db.Uuid
+  channel    String // "sms" | "call" | "note" | "chat"
+  direction  String // "inbound" | "outbound"
+  subject    String?
+  content    String  @db.Text
+  status     String  @default("pending") // pending | sent | delivered | failed | read
+
+  // Call-specific
+  durationSec  Int?
+  recordingUrl String?
+
+  // SMS/Email-specific
+  externalId String?
+  templateId String?
+
+  operatorId    String  @db.Uuid
+  relatedTaskId String? @db.Uuid
+
+  sentAt      DateTime?
+  deliveredAt DateTime?
+  readAt      DateTime?
+  createdAt   DateTime  @default(now())
+  updatedAt   DateTime  @updatedAt
+
+  customer Customer @relation(fields: [customerId], references: [id], onDelete: Cascade)
+  operator User     @relation("CommunicationOperator", fields: [operatorId], references: [id])
+
+  @@index([customerId, createdAt])
+  @@index([channel])
+  @@index([status])
+  @@index([operatorId, createdAt])
+  @@map("crm_communications")
+}
+
+model MessageTemplate {
+  id          String   @id @default(cuid())
+  name        String
+  channel     String // "sms" | "email"
+  subject     String?
+  content     String   @db.Text
+  variables   String[]
+  category    String? // welcome | followup | rejection | payment | custom
+  isActive    Boolean  @default(true)
+  createdById String   @db.Uuid
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  createdBy User @relation("TemplateCreator", fields: [createdById], references: [id])
+
+  @@index([channel])
+  @@index([category])
+  @@index([isActive])
+  @@map("crm_message_templates")
+}
+
+model Activity {
+  id           String    @id @default(cuid())
+  customerId   String?   @db.Uuid
+  type         String // "call" | "meeting" | "note" | "followup"
+  title        String
+  description  String?   @db.Text
+  dueAt        DateTime?
+  completedAt  DateTime?
+  assignedToId String    @db.Uuid
+  priority     String    @default("normal") // low | normal | high | urgent
+  status       String    @default("pending") // pending | completed | cancelled
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  customer   Customer? @relation(fields: [customerId], references: [id], onDelete: SetNull)
+  assignedTo User      @relation("ActivityAssignee", fields: [assignedToId], references: [id])
+
+  @@index([assignedToId, status])
+  @@index([dueAt])
+  @@index([customerId])
+  @@map("crm_activities")
+}
+
+model RecurringTask {
+  id           String    @id @default(cuid())
+  title        String
+  description  String?   @db.Text
+  cronExpr     String
+  assignedToId String    @db.Uuid
+  priority     String    @default("normal")
+  isActive     Boolean   @default(true)
+  lastRunAt    DateTime?
+  nextRunAt    DateTime?
+  createdAt    DateTime  @default(now())
+  updatedAt    DateTime  @updatedAt
+
+  assignedTo User @relation("RecurringTaskAssignee", fields: [assignedToId], references: [id])
+
+  @@index([isActive, nextRunAt])
+  @@index([assignedToId])
+  @@map("crm_recurring_tasks")
 }

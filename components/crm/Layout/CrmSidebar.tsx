@@ -25,11 +25,11 @@ export type SidebarItem = {
 export const SIDEBAR_ITEMS: SidebarItem[] = [
   { label: "داشبورد", href: "/crm", icon: <LayoutDashboard size={18} /> },
   { label: "مشتریان", href: "/crm/customers", icon: <Users size={18} /> },
-  { label: "تسک‌ها", href: "/crm/tasks", icon: <ClipboardList size={18} />, locked: true },
+  { label: "تسک‌ها", href: "/crm/tasks", icon: <ClipboardList size={18} /> },
   { label: "پایپ‌لاین", href: "/crm/pipeline", icon: <Briefcase size={18} />, locked: true },
-  { label: "ارتباطات", href: "/crm/communications", icon: <MessageSquare size={18} />, locked: true },
+  { label: "ارتباطات", href: "/crm/communications", icon: <MessageSquare size={18} /> },
   { label: "گزارش‌ها", href: "/crm/reports", icon: <BarChart3 size={18} />, locked: true },
-  { label: "قالب‌ها", href: "/crm/templates", icon: <FileText size={18} />, locked: true },
+  { label: "قالب‌ها", href: "/crm/templates", icon: <FileText size={18} /> },
   { label: "نمایندگان", href: "/crm/agents", icon: <UserCog size={18} />, locked: true },
   { label: "تنظیمات", href: "/crm/settings", icon: <Settings size={18} /> },
 ];
@@ -106,7 +106,7 @@ export default function CrmSidebar({
         </nav>
 
         <div className="text-white/20 text-[10px] text-center pt-4 border-t border-white/5">
-          نسخه فاز ۱ — Foundation + Customer 360
+          نسخه فاز ۲ — ارتباطات، قالب‌ها و تسک‌ها
         </div>
       </div>
     </aside>
