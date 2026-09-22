@@ -7,6 +7,7 @@ import Navbar from "@/components/Navbar";
 import InputField from "@/components/InputField";
 import { onlyPersian } from "@/lib/form-validators";
 import { apiFetch } from "@/lib/api-client";
+import RejectionModal from "@/components/crm/RejectionModal";
 
 // ==================== تایپ‌ها ====================
 type FieldKey = string;
@@ -483,8 +484,9 @@ const RoleWorkflowPage: React.FC<RoleWorkflowPageProps> = ({
   const router = useRouter();
   const [modalState, setModalState] = useState<{
     isOpen: boolean;
-    type: "cancel" | "accept" | null;
+    type: "accept" | "cancel" | null;
   }>({ isOpen: false, type: null });
+  const [rejectionOpen, setRejectionOpen] = useState(false);
 
   useEffect(() => {
     const initialForm: Record<string, any> = {};
@@ -604,7 +606,52 @@ const RoleWorkflowPage: React.FC<RoleWorkflowPageProps> = ({
   };
 
   const handleCancelJob = () => {
-    setModalState({ isOpen: true, type: "cancel" });
+    // Phase 3: mandatory RejectionModal replaces the simple confirm dialog
+    setRejectionOpen(true);
+  };
+
+  const handleRejectionConfirm = async (rejection: { reasonId: string; reasonName: string; notes: string }) => {
+    setRejectionOpen(false);
+
+    // 1) Workflow rejection — source of truth
+    try {
+      const res = await apiFetch("/api/workflow/complete", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        credentials: "include",
+        body: JSON.stringify({
+          stepInstanceId,
+          action: "reject",
+          formData: {},
+          notes: rejection.notes || undefined,
+        }),
+      });
+      if (!res.ok) {
+        alert("خطا در ریجکت تسک");
+        return;
+      }
+    } catch {
+      alert("خطا در ارتباط با سرور");
+      return;
+    }
+
+    // 2) CRM TaskRejection record — non-blocking: CRM failure must NOT undo the workflow rejection
+    try {
+      await apiFetch("/api/crm/tasks/rejections", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        credentials: "include",
+        body: JSON.stringify({
+          stepInstanceId,
+          reasonId: rejection.reasonId,
+          notes: rejection.notes || undefined,
+        }),
+      });
+    } catch (e) {
+      console.warn("[CRM] TaskRejection record failed (workflow rejection still valid):", e);
+    }
+
+    router.push(redirectUrl);
   };
 
   const handleModalConfirm = async () => {
@@ -1801,6 +1848,13 @@ const RoleWorkflowPage: React.FC<RoleWorkflowPageProps> = ({
         }
         cancelText="بازگشت"
         type={modalState.type === "cancel" ? "danger" : "success"}
+      />
+
+      {/* ==================== CRM REJECTION MODAL (Phase 3, mandatory) ==================== */}
+      <RejectionModal
+        open={rejectionOpen}
+        onClose={() => setRejectionOpen(false)}
+        onConfirm={handleRejectionConfirm}
       />
 
       {/* ==================== SMS COMPOSE MODAL (price-expert/value) ==================== */}
