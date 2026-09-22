@@ -39,6 +39,7 @@ model User {
   recurringTasksAsAssignee RecurringTask[]        @relation("RecurringTaskAssignee")
   opportunitiesAsAssignee  Opportunity[]          @relation("OpportunityAssignee")
   taskRejectionsAsRejector TaskRejection[]        @relation("TaskRejector")
+  automationRulesCreated   AutomationRule[]       @relation("AutomationRuleCreator")
 
   @@index([userType])
   @@index([active])
@@ -806,4 +807,74 @@ model TaskRejection {
   @@index([reasonId])
   @@index([rejectedAt])
   @@map("crm_task_rejections")
+}
+
+model AutomationRule {
+  id            String    @id @default(cuid())
+  name          String
+  description   String?
+  isActive      Boolean   @default(true)
+  priority      Int       @default(0)
+  trigger       String
+  triggerConfig Json?
+  conditions    Json
+  actions       Json
+  runCount      Int       @default(0)
+  lastRunAt     DateTime?
+  createdById   String    @db.Uuid
+  createdAt     DateTime  @default(now())
+  updatedAt     DateTime  @updatedAt
+
+  createdBy User            @relation("AutomationRuleCreator", fields: [createdById], references: [id])
+  logs      AutomationLog[]
+
+  @@index([isActive, priority])
+  @@index([trigger])
+  @@map("automation_rules")
+}
+
+model AutomationLog {
+  id          String   @id @default(cuid())
+  ruleId      String
+  triggeredBy String
+  entityType  String?
+  entityId    String?
+  success     Boolean
+  error       String?  @db.Text
+  context     Json?
+  durationMs  Int?
+  createdAt   DateTime @default(now())
+
+  rule AutomationRule @relation(fields: [ruleId], references: [id], onDelete: Cascade)
+
+  @@index([ruleId, createdAt])
+  @@index([success])
+  @@index([entityType, entityId])
+  @@map("automation_logs")
+}
+
+model DailyMetric {
+  id                 String   @id @default(cuid())
+  date               DateTime @unique @db.Date
+  customersNew       Int      @default(0)
+  customersActive    Int      @default(0)
+  formsSubmitted     Int      @default(0)
+  formsByType        Json?
+  tasksAssigned      Int      @default(0)
+  tasksCompleted     Int      @default(0)
+  tasksRejected      Int      @default(0)
+  avgTaskDurationMin Int?
+  dealsCreated       Int      @default(0)
+  dealsWon           Int      @default(0)
+  dealsLost          Int      @default(0)
+  dealValue          Decimal  @default(0) @db.Decimal(15, 0)
+  smsSent            Int      @default(0)
+  smsReceived        Int      @default(0)
+  callsMade          Int      @default(0)
+  revenue            Decimal  @default(0) @db.Decimal(15, 0)
+  conversionRate     Float?
+  createdAt          DateTime @default(now())
+
+  @@index([date])
+  @@map("daily_metrics")
 }
