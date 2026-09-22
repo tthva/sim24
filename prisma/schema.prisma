@@ -37,6 +37,8 @@ model User {
   templatesCreated         MessageTemplate[]      @relation("TemplateCreator")
   activitiesAsAssignee     Activity[]             @relation("ActivityAssignee")
   recurringTasksAsAssignee RecurringTask[]        @relation("RecurringTaskAssignee")
+  opportunitiesAsAssignee  Opportunity[]          @relation("OpportunityAssignee")
+  taskRejectionsAsRejector TaskRejection[]        @relation("TaskRejector")
 
   @@index([userType])
   @@index([active])
@@ -520,6 +522,7 @@ model Customer {
   documents      CustomerDocument[]
   communications Communication[]
   activities     Activity[]
+  opportunities  Opportunity[]
   referralAgent  Agent?                @relation("CustomerReferral", fields: [referralAgentId], references: [id])
 
   @@index([customerCode])
@@ -692,4 +695,115 @@ model RecurringTask {
   @@index([isActive, nextRunAt])
   @@index([assignedToId])
   @@map("crm_recurring_tasks")
+}
+
+model Pipeline {
+  id         String   @id @default(cuid())
+  name       String
+  department String?
+  isDefault  Boolean  @default(false)
+  isActive   Boolean  @default(true)
+  createdAt  DateTime @default(now())
+  updatedAt  DateTime @updatedAt
+
+  stages        PipelineStage[]
+  opportunities Opportunity[]
+
+  @@index([isDefault])
+  @@index([department])
+  @@map("crm_pipelines")
+}
+
+model PipelineStage {
+  id         String   @id @default(cuid())
+  pipelineId String
+  code       String
+  name       String
+  order      Int
+  color      String?
+  isWon      Boolean  @default(false)
+  isLost     Boolean  @default(false)
+  createdAt  DateTime @default(now())
+
+  pipeline      Pipeline      @relation(fields: [pipelineId], references: [id], onDelete: Cascade)
+  opportunities Opportunity[]
+
+  @@unique([pipelineId, code])
+  @@index([pipelineId, order])
+  @@map("crm_pipeline_stages")
+}
+
+model Opportunity {
+  id              String    @id @default(cuid())
+  customerId      String    @db.Uuid
+  pipelineId      String
+  stageId         String
+  title           String
+  description     String?   @db.Text
+  estimatedValue  Decimal?  @db.Decimal(15, 0)
+  probability     Int?
+  expectedCloseAt DateTime?
+  assignedToId    String?   @db.Uuid
+
+  workflowInstanceId String?
+  customerFormId     String?
+
+  rejectionReasonId String?
+  rejectionNotes    String?  @db.Text
+  rejectionFiles    String[]
+
+  wonAt     DateTime?
+  lostAt    DateTime?
+  createdAt DateTime  @default(now())
+  updatedAt DateTime  @updatedAt
+
+  customer        Customer         @relation(fields: [customerId], references: [id], onDelete: Cascade)
+  pipeline        Pipeline         @relation(fields: [pipelineId], references: [id])
+  stage           PipelineStage    @relation(fields: [stageId], references: [id])
+  assignedTo      User?            @relation("OpportunityAssignee", fields: [assignedToId], references: [id])
+  rejectionReason RejectionReason? @relation(fields: [rejectionReasonId], references: [id])
+
+  @@index([customerId])
+  @@index([stageId])
+  @@index([assignedToId])
+  @@index([pipelineId, stageId])
+  @@index([createdAt])
+  @@map("crm_opportunities")
+}
+
+model RejectionReason {
+  id          String   @id @default(cuid())
+  code        String   @unique
+  name        String
+  category    String?
+  description String?
+  isActive    Boolean  @default(true)
+  isSystem    Boolean  @default(false)
+  order       Int      @default(0)
+  createdAt   DateTime @default(now())
+
+  opportunities  Opportunity[]
+  taskRejections TaskRejection[]
+
+  @@index([isActive])
+  @@index([category])
+  @@map("crm_rejection_reasons")
+}
+
+model TaskRejection {
+  id             String   @id @default(cuid())
+  stepInstanceId String
+  reasonId       String
+  notes          String?  @db.Text
+  attachments    String[]
+  rejectedById   String   @db.Uuid
+  rejectedAt     DateTime @default(now())
+
+  reason     RejectionReason @relation(fields: [reasonId], references: [id])
+  rejectedBy User            @relation("TaskRejector", fields: [rejectedById], references: [id])
+
+  @@index([stepInstanceId])
+  @@index([reasonId])
+  @@index([rejectedAt])
+  @@map("crm_task_rejections")
 }
