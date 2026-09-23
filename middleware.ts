@@ -67,6 +67,7 @@ const PROTECTED_PREFIXES = [
   "/operators",
   "/operatorsadmins",
   "/user",
+  "/crm",
 ];
 
 function isProtectedPath(pathname: string): boolean {
@@ -81,6 +82,7 @@ const ROLE_PREFIX_MAP: Record<string, string[]> = {
   "/operators": ["operator", "admin"],
   "/operatorsadmins": ["admin"],
   "/user": ["user", "agent", "admin"],
+  "/crm": ["operator", "admin"], // shared CRM portal — not a landing page for any role
 };
 
 function getPathPrefix(pathname: string): string | null {
@@ -217,7 +219,10 @@ export async function middleware(request: NextRequest) {
   // Step 3: Strict path-level access enforcement
   // Ensures users are on their correct landing page, not just the right role prefix
   const userInput = buildUserInput(payload);
-  if (!isAllowedPath(userInput, pathname)) {
+  // /crm is a shared portal, not any role's landing page, so the landing-scope
+  // check below would bounce every authenticated user away from it. The
+  // ROLE_PREFIX_MAP check in Step 2 is the authority for /crm.
+  if (!pathname.startsWith("/crm") && !isAllowedPath(userInput, pathname)) {
     const landing = getLandingPage(userInput);
     log("middleware_total", elapsed(t0), { pathname, outcome: "redirect_not_allowed" });
     return NextResponse.redirect(new URL(landing, request.url));
