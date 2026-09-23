@@ -9,9 +9,12 @@ import {
   Briefcase,
   MessageSquare,
   BarChart3,
+  TrendingUp,
+  ChartPie,
   FileText,
   UserCog,
   Settings,
+  Bot,
   Lock,
 } from "lucide-react";
 
@@ -28,10 +31,13 @@ export const SIDEBAR_ITEMS: SidebarItem[] = [
   { label: "تسک‌ها", href: "/crm/tasks", icon: <ClipboardList size={18} /> },
   { label: "پایپ‌لاین", href: "/crm/pipeline", icon: <Briefcase size={18} /> },
   { label: "ارتباطات", href: "/crm/communications", icon: <MessageSquare size={18} /> },
-  { label: "گزارش‌ها", href: "/crm/reports/rejections", icon: <BarChart3 size={18} /> },
+  { label: "تحلیل‌ها", href: "/crm/analytics", icon: <BarChart3 size={18} /> },
+  { label: "گزارش‌ها", href: "/crm/reports", icon: <TrendingUp size={18} /> },
+  { label: "گزارش ریجکت‌ها", href: "/crm/reports/rejections", icon: <ChartPie size={18} /> },
   { label: "قالب‌ها", href: "/crm/templates", icon: <FileText size={18} /> },
   { label: "نمایندگان", href: "/crm/agents", icon: <UserCog size={18} />, locked: true },
   { label: "تنظیمات", href: "/crm/settings", icon: <Settings size={18} /> },
+  { label: "اتوماسیون", href: "/crm/settings/automation", icon: <Bot size={18} /> },
 ];
 
 export default function CrmSidebar({
@@ -68,9 +74,14 @@ export default function CrmSidebar({
 
         <nav className="flex flex-col gap-1 flex-1">
           {SIDEBAR_ITEMS.map((item) => {
+            // A parent route (/crm, /crm/reports, /crm/settings) matches exactly,
+            // otherwise its own child entry would highlight the parent too.
+            const hasChildRoute = SIDEBAR_ITEMS.some(
+              (o) => o.href !== item.href && o.href.startsWith(`${item.href}/`)
+            );
             const active =
-              item.href === "/crm"
-                ? pathname === "/crm"
+              item.href === "/crm" || hasChildRoute
+                ? pathname === item.href
                 : pathname.startsWith(item.href);
             if (item.locked) {
               return (
