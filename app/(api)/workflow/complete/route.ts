@@ -3,7 +3,8 @@
 // ============================
 // POST /api/workflow/complete
 // Marks a step instance as completed and advances the workflow.
-// Now accepts formData (submitted form values) and action (COMPLETE/REJECT/SKIP).
+// Now accepts formData (submitted form values) and action (COMPLETE/REJECT/SKIP/SAVE).
+// The action is case-insensitive and normalized to uppercase at this boundary.
 // ============================
 
 import { NextRequest, NextResponse } from "next/server";
@@ -24,7 +25,12 @@ export async function POST(request: NextRequest) {
     const userId = auth.user.sub;
 
     const body = await request.json();
-    const { stepInstanceId, formData, action, notes } = body;
+    const { stepInstanceId, formData, notes } = body;
+
+    // Normalize action case at the route boundary: the UI sends lowercase
+    // ("reject"/"complete") but the service compares canonical uppercase
+    // constants. Without this, UI rejections fell through to COMPLETED.
+    const action = String(body.action ?? "").toUpperCase();
 
     if (!stepInstanceId) {
       return NextResponse.json(
