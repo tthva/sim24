@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
-import { requireRole } from "@/lib/auth-guard";
+import { requirePermission } from "@/lib/auth-guard";
 import { validateCsrf } from "@/lib/csrf";
 import { z } from "zod";
 
@@ -87,7 +87,7 @@ const CREATOR_SELECT = { id: true, fullName: true, username: true } as const;
 // ─── GET /api/crm/automation/rules — list with filters ─────
 export async function GET(request: NextRequest) {
   try {
-    const auth = await requireRole(request, ["operator", "admin"]);
+    const auth = await requirePermission(request, "crm.read");
     if (auth.response) return auth.response;
 
     const parsed = listQuerySchema.safeParse(
@@ -139,7 +139,7 @@ export async function POST(request: NextRequest) {
   if (csrfErr) return csrfErr;
 
   try {
-    const auth = await requireRole(request, ["operator", "admin"]);
+    const auth = await requirePermission(request, "crm.manage");
     if (auth.response) return auth.response;
 
     // .catch(() => null) so a missing/unparseable body is a 400, not a 500.
