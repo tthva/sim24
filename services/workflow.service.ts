@@ -12,6 +12,7 @@ import * as WorkflowRepo from "@/repositories/workflow.repository";
 import type { ApiResponse } from "@/lib/types/api";
 import { successResponse, errorResponse } from "@/lib/types/api";
 import { formatFaDateTime } from "@/lib/date-fa";
+import { scheduleTrigger } from "@/lib/crm/automation-engine";
 
 // ─── Types ────────────────────────────────────────────────────────────────
 
@@ -360,6 +361,11 @@ export async function startWorkflow(input: StartWorkflowInput): Promise<ApiRespo
 
 export async function completeStep(input: CompleteStepInput): Promise<ApiResponse<WorkflowResult>> {
   try {
+    // CRM (Phase 4.7d): snapshot for the post-commit automation trigger.
+    // Captured inside the transaction (where the instance + step are loaded) and
+    // fired only AFTER the commit, so a rule can never run for a rolled-back step.
+    let crmTriggerContext: { customerFormId?: string; stepCode?: string; targetStatus?: string } | null = null;
+
     const txResult = await prisma.$transaction(async (tx) => {
     // Re-fetch step instance inside transaction for consistency
     const stepInstance = await tx.workflowStepInstance.findUnique({
@@ -647,6 +653,13 @@ export async function completeStep(input: CompleteStepInput): Promise<ApiRespons
 
     const currentStepDef = newStatus === "COMPLETED" || newStatus === "REJECTED" ? null : allSteps.find((s: any) => s.stepOrder === newStepOrder);
 
+      // CRM (Phase 4.7d): capture trigger context — fired after the tx commits
+      crmTriggerContext = {
+        customerFormId: instance.customerFormId ?? undefined,
+        stepCode: stepInstance.step.code,
+        targetStatus,
+      };
+
       return successResponse({
         instanceId: updatedInstance.id,
         status: newStatus,
@@ -667,6 +680,41 @@ export async function completeStep(input: CompleteStepInput): Promise<ApiRespons
         await syncConsignmentItemForWorkflow(txResult.data.instanceId, input.actorId);
       } catch (syncError) {
         console.error("ConsignmentItem sync failed:", syncError);
+      }
+    }
+
+    // ─── CRM (Phase 4.7d): task automation triggers (fire-and-forget) ───────
+    // Fired AFTER the transaction commits (see crmTriggerContext above) so rules
+    // never run for a rolled-back step.
+    // NOTE: `customerId` is sourced from instance.customerFormId, which is the
+    // CustomerForm id — not the CRM Customer.id (4.7e follow-up).
+    // NOTE: reasonId is not part of CompleteStepInput — the rejection record is
+    // created by POST /api/crm/tasks/rejections, so it is omitted here.
+    // TS cannot track assignments made inside the transaction closure — assert the snapshot type.
+    const crmCtx = crmTriggerContext as { customerFormId?: string; stepCode?: string; targetStatus?: string } | null;
+
+    if (txResult.success && crmCtx) {
+      const triggerData = {
+        stepInstanceId: input.stepInstanceId,
+        stepCode: crmCtx.stepCode,
+        customerId: crmCtx.customerFormId,
+        workflowInstanceId: txResult.data.instanceId,
+      };
+
+      if (crmCtx.targetStatus === "COMPLETED") {
+        scheduleTrigger({
+          type: "task_completed",
+          entityType: "task",
+          entityId: input.stepInstanceId,
+          data: triggerData,
+        });
+      } else if (crmCtx.targetStatus === "REJECTED") {
+        scheduleTrigger({
+          type: "task_rejected",
+          entityType: "task",
+          entityId: input.stepInstanceId,
+          data: triggerData,
+        });
       }
     }
 
