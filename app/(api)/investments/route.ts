@@ -204,9 +204,20 @@ export async function POST(req: NextRequest) {
       },
     });
 
+    if (scopedIdempotencyKey) {
+      await completeIdempotencyKey(scopedIdempotencyKey, result.id, { workflowCode, workflowInstanceId });
+    }
+
+    // CRM (Phase 1): upsert customer + log interaction — never breaks the form
+    const crmCustomer = await hookCrmFormSubmission({
+      phone: normalized.phone,
+      fullName: normalized.fullName,
+      formType: canonicalFormType,
+      customerFormId: result.id,
+      agentId,
+    });
+
     // CRM (Phase 4.7b): fire form_submitted automation rules — fire-and-forget
-    // TODO(4.7c): customerId not available — rules using update_customer/
-    // create_task will fail for this route.
     scheduleTrigger({
       type: "form_submitted",
       entityType: "customer",
@@ -215,22 +226,10 @@ export async function POST(req: NextRequest) {
         formType: canonicalFormType,
         phone: normalized.phone,
         name: normalized.fullName,
+        customerId: crmCustomer?.id ?? undefined,
         customerFormId: result.id,
         workflowCode,
       },
-    });
-
-    if (scopedIdempotencyKey) {
-      await completeIdempotencyKey(scopedIdempotencyKey, result.id, { workflowCode, workflowInstanceId });
-    }
-
-    // CRM (Phase 1): upsert customer + log interaction — never breaks the form
-    await hookCrmFormSubmission({
-      phone: normalized.phone,
-      fullName: normalized.fullName,
-      formType: canonicalFormType,
-      customerFormId: result.id,
-      agentId,
     });
 
     return apiSuccess(
