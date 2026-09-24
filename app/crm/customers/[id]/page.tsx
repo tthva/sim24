@@ -4,13 +4,14 @@ export const dynamic = "force-dynamic";
 
 import { use, useCallback, useEffect, useState } from "react";
 import Link from "next/link";
-import { ArrowRight, FileText, MessageSquare, Paperclip, Tag as TagIcon, StickyNote } from "lucide-react";
+import { ArrowRight, Activity, FileText, MessageSquare, Paperclip, Tag as TagIcon, StickyNote } from "lucide-react";
 import CrmCard from "@/components/crm/common/CrmCard";
 import CrmBadge from "@/components/crm/common/CrmBadge";
 import CrmButton from "@/components/crm/common/CrmButton";
 import EditCustomerModal from "@/components/crm/customers/EditCustomerModal";
 import { NotesTab } from "@/components/crm/customers/NotesTab";
 import { TagsTab } from "@/components/crm/customers/TagsTab";
+import { TimelineTab } from "@/components/crm/customers/TimelineTab";
 import { crmFetch } from "@/lib/crm/client";
 
 const SEGMENT_FA: Record<string, string> = {
@@ -49,6 +50,7 @@ const faDateTime = (iso: string | null) =>
   iso ? new Date(iso).toLocaleString("fa-IR", { year: "numeric", month: "short", day: "numeric", hour: "2-digit", minute: "2-digit" }) : "—";
 
 const TABS = [
+  { key: "timeline", label: "تایم‌لاین", icon: <Activity size={15} /> },
   { key: "interactions", label: "تعاملات", icon: <FileText size={15} /> },
   { key: "communications", label: "ارتباطات", icon: <MessageSquare size={15} /> },
   { key: "files", label: "فایل‌ها", icon: <Paperclip size={15} /> },
@@ -169,6 +171,8 @@ export default function Customer360Page({ params }: { params: Promise<{ id: stri
               </button>
             ))}
           </div>
+
+          {tab === "timeline" && <TimelineTab customerId={customer.id} />}
 
           {tab === "interactions" && (
             <CrmCard title="تاریخچه تعاملات">
