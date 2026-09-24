@@ -6,6 +6,7 @@
 
 import { prisma } from "@/lib/prisma";
 import { resolveCustomerSafe } from "@/lib/crm/customer-resolver";
+import type { Customer } from "@prisma/client";
 
 export async function hookCrmFormSubmission(input: {
   phone: string | null;
@@ -13,16 +14,16 @@ export async function hookCrmFormSubmission(input: {
   formType: string;
   customerFormId: string;
   agentId?: string | null;
-}): Promise<void> {
+}): Promise<Customer | null> {
   try {
-    if (!input.phone) return;
+    if (!input.phone) return null;
     const customer = await resolveCustomerSafe({
       phone: input.phone,
       fullName: input.fullName,
       source: input.formType,
       referralAgentId: input.agentId ?? undefined,
     });
-    if (!customer) return;
+    if (!customer) return null;
     await prisma.customerInteraction.create({
       data: {
         customerId: customer.id,
@@ -33,8 +34,10 @@ export async function hookCrmFormSubmission(input: {
         metadata: { formType: input.formType },
       },
     });
+    return customer;
   } catch (error) {
     // Never propagate — CRM is a side effect of the form flow
     console.error("[CRM] hookCrmFormSubmission failed (non-fatal):", error);
+    return null;
   }
 }

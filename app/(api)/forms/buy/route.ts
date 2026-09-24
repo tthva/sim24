@@ -312,20 +312,6 @@ export async function POST(req: NextRequest) {
       },
     });
 
-    // CRM (Phase 4.7a): fire form_submitted automation rules — fire-and-forget
-    scheduleTrigger({
-      type: "form_submitted",
-      entityType: "customer",
-      entityId: normalized.phone ?? undefined,
-      data: {
-        formType: normalized.formType,
-        phone: normalized.phone,
-        name: normalized.fullName,
-        customerFormId: result.id,
-        workflowCode,
-      },
-    });
-
     // Mark idempotency as completed
     if (scopedIdempotencyKey) {
       await completeIdempotencyKey(scopedIdempotencyKey, result.id, {
@@ -338,12 +324,27 @@ export async function POST(req: NextRequest) {
     await invalidateSearchCache("sim");
 
     // CRM (Phase 1): upsert customer + log interaction — never breaks the form
-    await hookCrmFormSubmission({
+    const crmCustomer = await hookCrmFormSubmission({
       phone: normalized.phone,
       fullName: normalized.fullName,
       formType: normalized.formType,
       customerFormId: result.id,
       agentId,
+    });
+
+    // CRM (Phase 4.7a): fire form_submitted automation rules — fire-and-forget
+    scheduleTrigger({
+      type: "form_submitted",
+      entityType: "customer",
+      entityId: normalized.phone ?? undefined,
+      data: {
+        formType: normalized.formType,
+        phone: normalized.phone,
+        name: normalized.fullName,
+        customerId: crmCustomer?.id ?? undefined,
+        customerFormId: result.id,
+        workflowCode,
+      },
     });
 
     return apiSuccess(

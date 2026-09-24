@@ -301,6 +301,19 @@ async function handleSellForm(
     },
   });
 
+  if (scopedIdempotencyKey) {
+    await completeIdempotencyKey(scopedIdempotencyKey, customerForm.id, { workflowCode, workflowInstanceId });
+  }
+
+  // CRM (Phase 1): upsert customer + log interaction — never breaks the form
+  const crmCustomer = await hookCrmFormSubmission({
+    phone: normalized.phone,
+    fullName: normalized.fullName,
+    formType: normalized.formType,
+    customerFormId: customerForm.id,
+    agentId,
+  });
+
   // CRM (Phase 4.7a): fire form_submitted automation rules — fire-and-forget
   scheduleTrigger({
     type: "form_submitted",
@@ -310,22 +323,10 @@ async function handleSellForm(
       formType: normalized.formType,
       phone: normalized.phone,
       name: normalized.fullName,
+      customerId: crmCustomer?.id ?? undefined,
       customerFormId: customerForm.id,
       workflowCode,
     },
-  });
-
-  if (scopedIdempotencyKey) {
-    await completeIdempotencyKey(scopedIdempotencyKey, customerForm.id, { workflowCode, workflowInstanceId });
-  }
-
-  // CRM (Phase 1): upsert customer + log interaction — never breaks the form
-  await hookCrmFormSubmission({
-    phone: normalized.phone,
-    fullName: normalized.fullName,
-    formType: normalized.formType,
-    customerFormId: customerForm.id,
-    agentId,
   });
 
   return {
