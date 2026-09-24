@@ -11,9 +11,10 @@
  * 4. Assigns:
  *    - operator_product -> crm_operator
  *    - admin            -> crm_manager (keeps existing admin role)
- * 5. Creates test user (phase 4.8b-3):
- *    - crm_tester / crm_tester123 — crm_manager role ONLY (no crm_operator),
- *      used by Playwright UI tests to verify the /crm landing redirect.
+ * 5. Creates convention-matching CRM test users:
+ *    - operator_crm / operator123 — crm_operator role
+ *    - crm_admin / operator123 — crm_manager role
+ *    Both are AGENT users with a PRICE department profile.
  *
  * Run with: npx tsx scripts/crm-phase4.8-roles.ts
  */
@@ -44,25 +45,20 @@ const TEST_ASSIGNMENTS: Array<{ username: string; roleCode: string }> = [
   { username: "admin", roleCode: "crm_manager" },
 ];
 
-// Phase 4.8b-3: dedicated CRM UI-test user.
-// NOTE: Agent.department is a non-nullable enum in the schema and
-// /api/operator/auth returns 401 without a profile, so the profile must
-// have a department. The department never affects the landing page here:
-// getLandingPage short-circuits on hasCrmAccess (/crm) before the
-// department mapping. crm_tester gets ONLY the crm_manager role
-// (no crm_operator / operator role assignments).
-const TEST_USERS: Array<{
-  username: string;
-  password: string;
-  userType: "AGENT";
-  department: "PRICE";
-  roleCode: string;
-}> = [
+// Convention-matching CRM UI-test users.
+// Agent.department is non-nullable and /api/operator/auth requires a profile.
+// CRM access takes precedence over department routing in getLandingPage.
+const CRM_USERS = [
   {
-    username: "crm_tester",
-    password: "crm_tester123",
-    userType: "AGENT",
-    department: "PRICE",
+    username: "operator_crm",
+    password: "operator123",
+    fullName: "اپراتور CRM",
+    roleCode: "crm_operator",
+  },
+  {
+    username: "crm_admin",
+    password: "operator123",
+    fullName: "مدیر CRM",
     roleCode: "crm_manager",
   },
 ];
@@ -120,28 +116,36 @@ async function main() {
     console.log(`  ✅ assignment ensured: ${username} -> ${roleCode}`);
   }
 
-  // Phase 4.8b-3: dedicated CRM test user (idempotent upsert by username)
-  for (const u of TEST_USERS) {
+  // crm_tester is retained because it has session references, but it is
+  // kept unassigned so it cannot be used as a CRM test credential.
+  const legacyCrmTester = await prisma.user.findUnique({ where: { username: "crm_tester" } });
+  if (legacyCrmTester) {
+    await prisma.userRoleAssignment.deleteMany({ where: { userId: legacyCrmTester.id } });
+    console.log("  ✅ legacy crm_tester retained and unassigned (session references exist)");
+  }
+
+  // Convention-matching CRM users (idempotent upsert by username)
+  for (const u of CRM_USERS) {
     const password = await bcrypt.hash(u.password, 10);
     const user = await prisma.user.upsert({
       where: { username: u.username },
-      // Re-assert password/active/userType on every run so the known test
-      // credential always works, without touching role assignments here.
-      update: { password, active: true, userType: u.userType },
+      // Re-assert the known test credential and CRM Agent profile each run.
+      update: { password, fullName: u.fullName, active: true, userType: "AGENT" },
       create: {
         username: u.username,
         password,
+        fullName: u.fullName,
         active: true,
-        userType: u.userType,
+        userType: "AGENT",
       },
     });
     // Login (/api/operator/auth) 401s without a profile, so ensure one exists.
     await prisma.agent.upsert({
       where: { userId: user.id },
-      update: { active: true },
+      update: { department: "PRICE", active: true },
       create: {
         userId: user.id,
-        department: u.department,
+        department: "PRICE",
         active: true,
         adminId: null,
       },
@@ -154,7 +158,7 @@ async function main() {
       create: { userId: user.id, roleId: role.id },
     });
     touched.assignments += 1;
-    console.log(`  ✅ test user ready: ${u.username} / ${u.password} -> ${u.roleCode}`);
+    console.log(`  ✅ CRM test user ready: ${u.username} / ${u.password} -> ${u.roleCode}`);
   }
 
   console.log("📊 summary:", JSON.stringify(touched));
