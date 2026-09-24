@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
-import { requireRole } from "@/lib/auth-guard";
+import { requirePermission } from "@/lib/auth-guard";
 import { validateCsrf } from "@/lib/csrf";
 import { z } from "zod";
 
@@ -17,7 +17,7 @@ const patchSchema = z.object({
 // ─── GET /api/crm/rejection-reasons/[id] ─────
 export async function GET(request: NextRequest, { params }: RouteContext) {
   try {
-    const auth = await requireRole(request, ["operator", "admin"]);
+    const auth = await requirePermission(request, "crm.read");
     if (auth.response) return auth.response;
 
     const { id } = await params;
@@ -44,7 +44,7 @@ export async function PATCH(request: NextRequest, { params }: RouteContext) {
   if (csrfErr) return csrfErr;
 
   try {
-    const auth = await requireRole(request, ["operator", "admin"]);
+    const auth = await requirePermission(request, "crm.manage");
     if (auth.response) return auth.response;
 
     const { id } = await params;
@@ -81,7 +81,7 @@ export async function DELETE(request: NextRequest, { params }: RouteContext) {
   if (csrfErr) return csrfErr;
 
   try {
-    const auth = await requireRole(request, ["operator", "admin"]);
+    const auth = await requirePermission(request, "crm.manage");
     if (auth.response) return auth.response;
 
     const { id } = await params;

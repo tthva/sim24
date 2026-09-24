@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
-import { requireRole, getCurrentUser } from "@/lib/auth-guard";
+import { requirePermission, getCurrentUser } from "@/lib/auth-guard";
 import { validateCsrf } from "@/lib/csrf";
 import { sendSms } from "@/lib/crm/sms-sender";
 import { logActivity } from "@/lib/crm/activity-logger";
@@ -29,7 +29,7 @@ const createSchema = z.object({
 // ─── GET /api/crm/communications ─────
 export async function GET(request: NextRequest) {
   try {
-    const auth = await requireRole(request, ["operator", "admin"]);
+    const auth = await requirePermission(request, "crm.read");
     if (auth.response) return auth.response;
 
     const parsed = listQuerySchema.safeParse(
@@ -73,7 +73,7 @@ export async function POST(request: NextRequest) {
   if (csrfErr) return csrfErr;
 
   try {
-    const auth = await requireRole(request, ["operator", "admin"]);
+    const auth = await requirePermission(request, "crm.manage");
     if (auth.response) return auth.response;
     const authUser = await getCurrentUser(request);
     const operatorId = authUser?.sub;

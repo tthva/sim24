@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
-import { requireRole } from "@/lib/auth-guard";
+import { requirePermission } from "@/lib/auth-guard";
 import { z } from "zod";
 
 const querySchema = z.object({
@@ -11,7 +11,7 @@ const querySchema = z.object({
 // Analytics: count by reason, count by category, 30-day time series, rejection rate.
 export async function GET(request: NextRequest) {
   try {
-    const auth = await requireRole(request, ["operator", "admin"]);
+    const auth = await requirePermission(request, "crm.read");
     if (auth.response) return auth.response;
 
     const parsed = querySchema.safeParse(

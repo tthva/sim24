@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
-import { requireRole } from "@/lib/auth-guard";
+import { requirePermission } from "@/lib/auth-guard";
 import { z } from "zod";
 
 // ─── GET /api/crm/reports/conversion — sales funnel ─────
@@ -41,7 +41,7 @@ function ratio(numerator: number, denominator: number): number {
 
 export async function GET(request: NextRequest) {
   try {
-    const auth = await requireRole(request, ["operator", "admin"]);
+    const auth = await requirePermission(request, "crm.read");
     if (auth.response) return auth.response;
 
     const parsed = querySchema.safeParse(

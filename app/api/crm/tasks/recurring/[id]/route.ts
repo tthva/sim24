@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
-import { requireRole } from "@/lib/auth-guard";
+import { requirePermission } from "@/lib/auth-guard";
 import { validateCsrf } from "@/lib/csrf";
 import { z } from "zod";
 
@@ -20,7 +20,7 @@ export async function PATCH(request: NextRequest, { params }: RouteContext) {
   if (csrfErr) return csrfErr;
 
   try {
-    const auth = await requireRole(request, ["operator", "admin"]);
+    const auth = await requirePermission(request, "crm.manage");
     if (auth.response) return auth.response;
 
     const { id } = await params;
@@ -58,7 +58,7 @@ export async function DELETE(request: NextRequest, { params }: RouteContext) {
   if (csrfErr) return csrfErr;
 
   try {
-    const auth = await requireRole(request, ["operator", "admin"]);
+    const auth = await requirePermission(request, "crm.manage");
     if (auth.response) return auth.response;
 
     const { id } = await params;

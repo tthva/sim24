@@ -1,11 +1,11 @@
 import { NextRequest, NextResponse } from "next/server";
-import { requireRole } from "@/lib/auth-guard";
+import { requirePermission } from "@/lib/auth-guard";
 import { getDashboardStats, getTopCustomers } from "@/services/crm/customer.service";
 
 // ─── GET /api/crm/stats — dashboard aggregates ─────
 export async function GET(request: NextRequest) {
   try {
-    const auth = await requireRole(request, ["operator", "admin"]);
+    const auth = await requirePermission(request, "crm.read");
     if (auth.response) return auth.response;
 
     const [stats, topCustomers] = await Promise.all([

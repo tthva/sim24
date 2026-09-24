@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
-import { requireRole } from "@/lib/auth-guard";
+import { requirePermission } from "@/lib/auth-guard";
 import { z } from "zod";
 
 // Query params:
@@ -22,7 +22,7 @@ const listQuerySchema = z.object({
 // ─── GET /api/crm/automation/logs — list execution log ─────
 export async function GET(request: NextRequest) {
   try {
-    const auth = await requireRole(request, ["operator", "admin"]);
+    const auth = await requirePermission(request, "crm.read");
     if (auth.response) return auth.response;
 
     const parsed = listQuerySchema.safeParse(
