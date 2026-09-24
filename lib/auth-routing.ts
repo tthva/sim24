@@ -6,6 +6,13 @@ type LandingUserInput = {
   userType: "ADMIN" | "AGENT";
   adminDepartment?: string | null;
   agentDepartment?: string | null;
+  /**
+   * Phase 4.8b-3: true when the user holds a CRM DB role
+   * (crm_manager | crm_operator). Only the login API can populate this
+   * (it queries the DB); middleware builds input from the JWT only, so
+   * for middleware this stays undefined.
+   */
+  hasCrmAccess?: boolean;
 };
 
 // Only routes that have been verified to exist under app/
@@ -93,12 +100,19 @@ const VALID_LANDING_ROUTES = new Set<string>([
  */
 export function getLandingPage(user: LandingUserInput): string {
   // 1) Exact username match (fast path)
+  //    Known users keep their exact validated landing even when they also
+  //    hold a CRM role (e.g. operator_product has crm_operator but must
+  //    still land at /operators/product-manager).
   const direct = USERNAME_LANDING[user.username];
   if (direct && VALID_LANDING_ROUTES.has(direct)) return direct;
 
+  // 2) CRM role holders land at the CRM portal.
+  //    Checked BEFORE the admin/operator department + role fallbacks below.
+  if (user.hasCrmAccess) return "/crm";
+
   const norm = normalizeRole(user.role);
 
-  // 2) Admin with department
+  // 3) Admin with department
   if (norm === "admin" || user.userType === "ADMIN") {
     const dept = user.adminDepartment ?? null;
     if (dept && ADMIN_DEPARTMENT_TO_LANDING[dept]) {
@@ -108,7 +122,7 @@ export function getLandingPage(user: LandingUserInput): string {
     return ROLE_FALLBACK_LANDING.admin;
   }
 
-  // 3) Operator/AGENT with department
+  // 4) Operator/AGENT with department
   if (norm === "operator" || user.userType === "AGENT") {
     const dept = user.agentDepartment ?? null;
     if (dept && OPERATOR_DEPARTMENT_TO_LANDING[dept]) {
@@ -118,7 +132,7 @@ export function getLandingPage(user: LandingUserInput): string {
     return ROLE_FALLBACK_LANDING.operator;
   }
 
-  // 4) Agent/user fallback
+  // 5) Agent/user fallback
   if (norm === "agent") return ROLE_FALLBACK_LANDING.agent;
 
   return ROLE_FALLBACK_LANDING.user;

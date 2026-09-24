@@ -149,6 +149,21 @@ export async function POST(request: NextRequest) {
     }
     log("operator_login_profile_lookup", elapsed(profileStart));
 
+    // Phase 4.8b-3: does this user hold a CRM DB role?
+    // CRM-only users (e.g. crm_tester) must land at /crm instead of the
+    // department/role fallback (getLandingPage checks this flag before
+    // the operator/admin fallbacks, but after the username fast path).
+    const crmRoleStart = start();
+    const crmRole = await prisma.role.findFirst({
+      where: {
+        code: { in: ["crm_manager", "crm_operator"] },
+        assignments: { some: { userId: user.id } },
+      },
+      select: { code: true },
+    });
+    log("operator_login_crm_role_lookup", elapsed(crmRoleStart));
+    const hasCrmAccess = !!crmRole;
+
     const secure = isSecureRequest(request);
 
     // Phase 4: Create session + refresh token
@@ -237,6 +252,7 @@ export async function POST(request: NextRequest) {
         userType: "ADMIN",
         adminDepartment: profile.department ?? null,
         agentDepartment: null,
+        hasCrmAccess,
       });
 
       const response = NextResponse.json({
@@ -291,6 +307,7 @@ export async function POST(request: NextRequest) {
         userType: "AGENT",
         agentDepartment: department,
         adminDepartment: null,
+        hasCrmAccess,
       });
 
       const jwtStart = start();

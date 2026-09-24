@@ -11,10 +11,14 @@
  * 4. Assigns:
  *    - operator_product -> crm_operator
  *    - admin            -> crm_manager (keeps existing admin role)
+ * 5. Creates test user (phase 4.8b-3):
+ *    - crm_tester / crm_tester123 — crm_manager role ONLY (no crm_operator),
+ *      used by Playwright UI tests to verify the /crm landing redirect.
  *
  * Run with: npx tsx scripts/crm-phase4.8-roles.ts
  */
 import { PrismaClient } from "@prisma/client";
+import bcrypt from "bcryptjs";
 
 const prisma = new PrismaClient();
 
@@ -38,6 +42,29 @@ const ROLE_PERMISSIONS: Record<string, string[]> = {
 const TEST_ASSIGNMENTS: Array<{ username: string; roleCode: string }> = [
   { username: "operator_product", roleCode: "crm_operator" },
   { username: "admin", roleCode: "crm_manager" },
+];
+
+// Phase 4.8b-3: dedicated CRM UI-test user.
+// NOTE: Agent.department is a non-nullable enum in the schema and
+// /api/operator/auth returns 401 without a profile, so the profile must
+// have a department. The department never affects the landing page here:
+// getLandingPage short-circuits on hasCrmAccess (/crm) before the
+// department mapping. crm_tester gets ONLY the crm_manager role
+// (no crm_operator / operator role assignments).
+const TEST_USERS: Array<{
+  username: string;
+  password: string;
+  userType: "AGENT";
+  department: "PRICE";
+  roleCode: string;
+}> = [
+  {
+    username: "crm_tester",
+    password: "crm_tester123",
+    userType: "AGENT",
+    department: "PRICE",
+    roleCode: "crm_manager",
+  },
 ];
 
 async function main() {
@@ -91,6 +118,43 @@ async function main() {
     });
     touched.assignments += 1;
     console.log(`  ✅ assignment ensured: ${username} -> ${roleCode}`);
+  }
+
+  // Phase 4.8b-3: dedicated CRM test user (idempotent upsert by username)
+  for (const u of TEST_USERS) {
+    const password = await bcrypt.hash(u.password, 10);
+    const user = await prisma.user.upsert({
+      where: { username: u.username },
+      // Re-assert password/active/userType on every run so the known test
+      // credential always works, without touching role assignments here.
+      update: { password, active: true, userType: u.userType },
+      create: {
+        username: u.username,
+        password,
+        active: true,
+        userType: u.userType,
+      },
+    });
+    // Login (/api/operator/auth) 401s without a profile, so ensure one exists.
+    await prisma.agent.upsert({
+      where: { userId: user.id },
+      update: { active: true },
+      create: {
+        userId: user.id,
+        department: u.department,
+        active: true,
+        adminId: null,
+      },
+    });
+    const role = await prisma.role.findUnique({ where: { code: u.roleCode } });
+    if (!role) throw new Error(`Role "${u.roleCode}" not found after upsert`);
+    await prisma.userRoleAssignment.upsert({
+      where: { userId_roleId: { userId: user.id, roleId: role.id } },
+      update: {},
+      create: { userId: user.id, roleId: role.id },
+    });
+    touched.assignments += 1;
+    console.log(`  ✅ test user ready: ${u.username} / ${u.password} -> ${u.roleCode}`);
   }
 
   console.log("📊 summary:", JSON.stringify(touched));
