@@ -40,7 +40,7 @@ export async function POST(request: NextRequest) {
   if (csrfErr) return csrfErr;
 
   try {
-    const auth = await requirePermission(request, "crm.read");
+    const auth = await requirePermission(request, "crm.manage");
     if (auth.response) return auth.response;
 
     const body = await request.json();
