@@ -3,6 +3,7 @@ import { prisma } from "@/lib/prisma";
 import { requireRole } from "@/lib/auth-guard";
 import { validateCsrf } from "@/lib/csrf";
 import { updateLeadScore } from "@/lib/crm/lead-scoring";
+import { scheduleTrigger } from "@/lib/crm/automation-engine";
 import { z } from "zod";
 
 type RouteContext = { params: Promise<{ id: string }> };
@@ -103,6 +104,25 @@ export async function PATCH(request: NextRequest, { params }: RouteContext) {
 
     // Non-blocking lead score refresh
     updateLeadScore(existing.customerId).catch(() => {});
+
+    // CRM Phase 4.7f: fire stage_changed ONLY on a real stage transition. The
+    // guard compares the pre-update stage (`existing`, read before the update)
+    // with the requested one, so re-sending the same stageId is a no-op and does
+    // not emit a trigger. Fire-and-forget — never awaited, so it cannot block or
+    // fail this response.
+    if (d.stageId && existing.stageId !== d.stageId) {
+      scheduleTrigger({
+        type: "stage_changed",
+        entityType: "opportunity",
+        entityId: id,
+        data: {
+          opportunityId: id,
+          customerId: updated.customerId,
+          fromStage: existing.stageId,
+          toStage: d.stageId,
+        },
+      });
+    }
 
     return NextResponse.json({ success: true, data: updated });
   } catch (error: unknown) {

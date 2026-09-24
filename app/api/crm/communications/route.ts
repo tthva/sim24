@@ -4,6 +4,7 @@ import { requireRole, getCurrentUser } from "@/lib/auth-guard";
 import { validateCsrf } from "@/lib/csrf";
 import { sendSms } from "@/lib/crm/sms-sender";
 import { logActivity } from "@/lib/crm/activity-logger";
+import { scheduleTrigger } from "@/lib/crm/automation-engine";
 import { z } from "zod";
 
 const listQuerySchema = z.object({
@@ -142,6 +143,23 @@ export async function POST(request: NextRequest) {
       description: input.content.slice(0, 200),
       assignedToId: operatorId,
     }).catch(() => null);
+
+    // CRM Phase 4.7f: fire-and-forget automation trigger. scheduleTrigger is
+    // synchronous (setTimeout(0)) and never throws, so it can neither block nor
+    // fail this response. Rules that only care about inbound traffic can filter
+    // with a condition on `direction`.
+    scheduleTrigger({
+      type: "communication_received",
+      entityType: "customer",
+      entityId: created.customerId,
+      data: {
+        communicationId: created.id,
+        customerId: created.customerId,
+        channel: created.channel,
+        direction: created.direction,
+        content: created.content.slice(0, 200),
+      },
+    });
 
     return NextResponse.json({ success: true, data: created }, { status: 201 });
   } catch (error) {
