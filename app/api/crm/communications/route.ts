@@ -5,6 +5,8 @@ import { validateCsrf } from "@/lib/csrf";
 import { sendSms } from "@/lib/crm/sms-sender";
 import { logActivity } from "@/lib/crm/activity-logger";
 import { scheduleTrigger } from "@/lib/crm/automation-engine";
+import { hasViewAllPermission, getUserAgentId } from "@/lib/crm/scope";
+import type { Prisma } from "@prisma/client";
 import { z } from "zod";
 
 const listQuerySchema = z.object({
@@ -43,12 +45,25 @@ export async function GET(request: NextRequest) {
     }
     const { channel, customerId, direction, limit } = parsed.data;
 
+    // Phase 4.8b-2: per-owner scope — without crm.view_all, only
+    // communications belonging to customers the user's Agent owns.
+    const where: Prisma.CommunicationWhereInput = {
+      ...(channel ? { channel } : {}),
+      ...(customerId ? { customerId } : {}),
+      ...(direction ? { direction } : {}),
+    };
+    const userId = auth.user.sub;
+    const canViewAll = await hasViewAllPermission(userId);
+    if (!canViewAll) {
+      const agentId = await getUserAgentId(userId);
+      if (!agentId) {
+        return NextResponse.json({ success: true, data: [] });
+      }
+      where.customer = { is: { referralAgentId: agentId } };
+    }
+
     const items = await prisma.communication.findMany({
-      where: {
-        ...(channel ? { channel } : {}),
-        ...(customerId ? { customerId } : {}),
-        ...(direction ? { direction } : {}),
-      },
+      where,
       include: {
         customer: { select: { id: true, fullName: true, primaryPhone: true, customerCode: true } },
         operator: { select: { id: true, fullName: true, username: true } },

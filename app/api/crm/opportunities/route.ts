@@ -3,6 +3,8 @@ import { prisma } from "@/lib/prisma";
 import { requirePermission, getCurrentUser } from "@/lib/auth-guard";
 import { validateCsrf } from "@/lib/csrf";
 import { updateLeadScore } from "@/lib/crm/lead-scoring";
+import { hasViewAllPermission } from "@/lib/crm/scope";
+import type { Prisma } from "@prisma/client";
 import { z } from "zod";
 
 const listQuerySchema = z.object({
@@ -44,13 +46,24 @@ export async function GET(request: NextRequest) {
     }
     const { pipeline, stage, assignedTo, customerId, limit } = parsed.data;
 
+    // Phase 4.8b-2: per-owner scope — without crm.view_all, only own opportunities.
+    const where: Prisma.OpportunityWhereInput = {
+      ...(pipeline ? { pipelineId: pipeline } : {}),
+      ...(stage ? { stageId: stage } : {}),
+      ...(assignedTo ? { assignedToId: assignedTo } : {}),
+      ...(customerId ? { customerId } : {}),
+    };
+    const userId = auth.user.sub;
+    const canViewAll = await hasViewAllPermission(userId);
+    if (!canViewAll) {
+      if (assignedTo && assignedTo !== userId) {
+        return NextResponse.json({ success: true, data: [] });
+      }
+      where.assignedToId = userId;
+    }
+
     const items = await prisma.opportunity.findMany({
-      where: {
-        ...(pipeline ? { pipelineId: pipeline } : {}),
-        ...(stage ? { stageId: stage } : {}),
-        ...(assignedTo ? { assignedToId: assignedTo } : {}),
-        ...(customerId ? { customerId } : {}),
-      },
+      where,
       include: {
         customer: { select: { id: true, fullName: true, primaryPhone: true, customerCode: true, score: true } },
         stage: true,

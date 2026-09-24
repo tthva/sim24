@@ -2,6 +2,8 @@ import { NextRequest, NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
 import { requirePermission, getCurrentUser } from "@/lib/auth-guard";
 import { validateCsrf } from "@/lib/csrf";
+import { hasViewAllPermission } from "@/lib/crm/scope";
+import type { Prisma } from "@prisma/client";
 import { z } from "zod";
 
 const listQuerySchema = z.object({
@@ -40,13 +42,25 @@ export async function GET(request: NextRequest) {
     const { status, priority, assignedTo, mine, limit } = parsed.data;
 
     const authUser = await getCurrentUser(request);
+    const where: Prisma.ActivityWhereInput = {
+      ...(status ? { status } : {}),
+      ...(priority ? { priority } : {}),
+      ...(assignedTo ? { assignedToId: assignedTo } : {}),
+      ...(mine === "true" && authUser?.sub ? { assignedToId: authUser.sub } : {}),
+    };
+
+    // Phase 4.8b-2: per-owner scope — without crm.view_all, only own tasks.
+    const userId = auth.user.sub;
+    const canViewAll = await hasViewAllPermission(userId);
+    if (!canViewAll) {
+      if (assignedTo && assignedTo !== userId) {
+        return NextResponse.json({ success: true, data: [] });
+      }
+      where.assignedToId = userId;
+    }
+
     const items = await prisma.activity.findMany({
-      where: {
-        ...(status ? { status } : {}),
-        ...(priority ? { priority } : {}),
-        ...(assignedTo ? { assignedToId: assignedTo } : {}),
-        ...(mine === "true" && authUser?.sub ? { assignedToId: authUser.sub } : {}),
-      },
+      where,
       include: {
         assignedTo: { select: { id: true, fullName: true, username: true } },
         customer: { select: { id: true, fullName: true, primaryPhone: true, customerCode: true } },
