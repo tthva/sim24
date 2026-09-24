@@ -21,6 +21,7 @@ import {
 import { invalidateSearchCache } from "@/lib/search-cache";
 import { formatFaDateTime } from "@/lib/date-fa";
 import { hookCrmFormSubmission } from "@/lib/crm/form-hook";
+import { scheduleTrigger } from "@/lib/crm/automation-engine";
 
 // --- Zod schemas for each sell tab ---
 
@@ -297,6 +298,20 @@ async function handleSellForm(
         createdAtFa,
         ...(scopedIdempotencyKey ? { idempotencyKey: scopedIdempotencyKey } : {}),
       } as any,
+    },
+  });
+
+  // CRM (Phase 4.7a): fire form_submitted automation rules — fire-and-forget
+  scheduleTrigger({
+    type: "form_submitted",
+    entityType: "customer",
+    entityId: normalized.phone ?? undefined,
+    data: {
+      formType: normalized.formType,
+      phone: normalized.phone,
+      name: normalized.fullName,
+      customerFormId: customerForm.id,
+      workflowCode,
     },
   });
 
