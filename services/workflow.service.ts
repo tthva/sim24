@@ -13,6 +13,9 @@ import type { ApiResponse } from "@/lib/types/api";
 import { successResponse, errorResponse } from "@/lib/types/api";
 import { formatFaDateTime } from "@/lib/date-fa";
 import { scheduleTrigger } from "@/lib/crm/automation-engine";
+// Phase 4.7e: the same normalizer that writes Customer.primaryPhone, so a
+// workflow-side phone lookup always matches what the CRM stored.
+import { normalizePhone } from "@/lib/crm/customer-resolver";
 
 // ─── Types ────────────────────────────────────────────────────────────────
 
@@ -364,7 +367,9 @@ export async function completeStep(input: CompleteStepInput): Promise<ApiRespons
     // CRM (Phase 4.7d): snapshot for the post-commit automation trigger.
     // Captured inside the transaction (where the instance + step are loaded) and
     // fired only AFTER the commit, so a rule can never run for a rolled-back step.
-    let crmTriggerContext: { customerFormId?: string; stepCode?: string; targetStatus?: string } | null = null;
+    // Phase 4.7e: `customerPhone` is snapshotted here because the success payload
+    // returned by the transaction (txResult.data) contains no formData.
+    let crmTriggerContext: { customerFormId?: string; stepCode?: string; targetStatus?: string; customerPhone?: string } | null = null;
 
     const txResult = await prisma.$transaction(async (tx) => {
     // Re-fetch step instance inside transaction for consistency
@@ -653,11 +658,17 @@ export async function completeStep(input: CompleteStepInput): Promise<ApiRespons
 
     const currentStepDef = newStatus === "COMPLETED" || newStatus === "REJECTED" ? null : allSteps.find((s: any) => s.stepOrder === newStepOrder);
 
-      // CRM (Phase 4.7d): capture trigger context — fired after the tx commits
+      // CRM (Phase 4.7d/4.7e): capture trigger context — fired after the tx commits.
+      // `customerFormId` is a CustomerForm id (cuid) and must never be used as a
+      // CRM Customer.id (uuid). Snapshot the customer phone instead so the real
+      // Customer.id can be resolved after the commit.
+      const crmFd = (instance.formData as Record<string, unknown> | null) ?? {};
+      const crmRawPhone = crmFd["ph"] ?? crmFd["uph"] ?? crmFd["dPh"] ?? crmFd["mPh"];
       crmTriggerContext = {
         customerFormId: instance.customerFormId ?? undefined,
         stepCode: stepInstance.step.code,
         targetStatus,
+        customerPhone: crmRawPhone != null ? String(crmRawPhone) : undefined,
       };
 
       return successResponse({
@@ -686,18 +697,46 @@ export async function completeStep(input: CompleteStepInput): Promise<ApiRespons
     // ─── CRM (Phase 4.7d): task automation triggers (fire-and-forget) ───────
     // Fired AFTER the transaction commits (see crmTriggerContext above) so rules
     // never run for a rolled-back step.
-    // NOTE: `customerId` is sourced from instance.customerFormId, which is the
-    // CustomerForm id — not the CRM Customer.id (4.7e follow-up).
+    // NOTE (4.7e): `customerId` is resolved from the customer phone, NOT from
+    // instance.customerFormId (a CustomerForm cuid). Feeding a cuid into the
+    // uuid-typed customerId broke rules using update_customer (Prisma P2025)
+    // and create_task (Postgres 22P02).
     // NOTE: reasonId is not part of CompleteStepInput — the rejection record is
     // created by POST /api/crm/tasks/rejections, so it is omitted here.
     // TS cannot track assignments made inside the transaction closure — assert the snapshot type.
-    const crmCtx = crmTriggerContext as { customerFormId?: string; stepCode?: string; targetStatus?: string } | null;
+    const crmCtx = crmTriggerContext as {
+      customerFormId?: string;
+      stepCode?: string;
+      targetStatus?: string;
+      customerPhone?: string;
+    } | null;
 
     if (txResult.success && crmCtx) {
+      // Phase 4.7e: resolve the real CRM Customer.id (uuid) from the snapshotted
+      // phone. Fail-safe: a lookup failure degrades to `undefined` (rules using
+      // update_customer then report a clear "customerId missing" instead of a
+      // uuid-cast crash) and must never break the workflow response.
+      let crmCustomerId: string | undefined;
+      if (crmCtx.customerPhone) {
+        try {
+          const normalizedPhone = normalizePhone(crmCtx.customerPhone);
+          if (normalizedPhone) {
+            const crmCustomer = await prisma.customer.findUnique({
+              where: { primaryPhone: normalizedPhone },
+              select: { id: true },
+            });
+            crmCustomerId = crmCustomer?.id;
+          }
+        } catch (crmLookupError) {
+          console.error("[CRM] customer lookup failed (non-fatal):", crmLookupError);
+        }
+      }
+
       const triggerData = {
         stepInstanceId: input.stepInstanceId,
         stepCode: crmCtx.stepCode,
-        customerId: crmCtx.customerFormId,
+        customerId: crmCustomerId,             // real Customer.id (uuid) or undefined
+        customerFormId: crmCtx.customerFormId, // CustomerForm id (cuid) — reference only
         workflowInstanceId: txResult.data.instanceId,
       };
 
