@@ -22,6 +22,7 @@ import { invalidateSearchCache } from "@/lib/search-cache";
 import { apiError, apiSuccess } from "@/lib/forms/response";
 import { formatFaDateTime } from "@/lib/date-fa";
 import { hookCrmFormSubmission } from "@/lib/crm/form-hook";
+import { scheduleTrigger } from "@/lib/crm/automation-engine";
 import { assessPriceSearchRisk } from "@/lib/phone-risk";
 
 const searchFormSchema = z.object({
@@ -258,6 +259,22 @@ export async function POST(req: NextRequest) {
           } as any,
           scopedIdempotencyKey
         ) as any,
+      },
+    });
+
+    // CRM (Phase 4.7b): fire form_submitted automation rules — fire-and-forget
+    // TODO(4.7c): customerId not available — rules using update_customer/
+    // create_task will fail for this route.
+    scheduleTrigger({
+      type: "form_submitted",
+      entityType: "customer",
+      entityId: normalized.phone ?? undefined,
+      data: {
+        formType: normalized.formType,
+        phone: normalized.phone,
+        name: normalized.fullName,
+        customerFormId: customerForm.id,
+        workflowCode,
       },
     });
 
