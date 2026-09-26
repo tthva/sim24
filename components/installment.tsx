@@ -355,7 +355,13 @@ function InstPage({
               const target = Math.floor(nextTot * 0.3);
               const roundingUnit =
                 nextTot >= 10_000_000 ? 1_000_000 : 100_000;
-              const rounded = Math.floor(target / roundingUnit) * roundingUnit;
+              // Round UP to the rounding unit so auto-filled dp is never below
+              // the 30% threshold the form itself enforces (floor could produce
+              // e.g. 35,000,000 for sp=119,000,000 → 29.41% < 30% → silent dpErr).
+              let rounded = Math.ceil(target / roundingUnit) * roundingUnit;
+              if (rounded < nextTot * 0.3) {
+                rounded = Math.ceil((nextTot * 0.3) / roundingUnit) * roundingUnit;
+              }
 
               setDp(String(Math.max(rounded, 1)));
             }}
