@@ -1,10 +1,13 @@
 import { NextResponse, NextRequest } from "next/server";
 import { z } from "zod";
 import { checkRateLimit, getRateLimitHeaders } from "@/lib/rate-limiter-redis";
+import { getCurrentUser } from "@/lib/auth-guard";
 
 // Zod schema for query parameter validation
 const querySchema = z.object({
-  phoneNumber: z.string().regex(/^09\d{9}$/, "شماره موبایل نامعتبر"),
+  phoneNumber: z
+    .string()
+    .regex(/^0912\d{7}$/, "شماره موبایل نامعتبر — فقط پیش‌شماره 0912 پشتیبانی می‌شود."),
   condition: z.enum(["dry", "used"], { message: "وضعیت نامعتبر" }),
 });
 
@@ -60,22 +63,27 @@ function isGoldenNumber(phone: string): boolean {
 }
 
 export async function GET(req: NextRequest) {
-    // ── Public endpoint with IP-based rate limiting ─────────────────
-  // This endpoint serves the public /search page's operator-lookup card,
-  // so it MUST remain accessible WITHOUT authentication. Rate limiting by
-  // client IP mitigates anonymous enumeration/abuse. Fail-open if Redis
-  // is unavailable (see lib/rate-limiter-redis.ts).
+  // ── Public endpoint — anonymous allowed, rate limited by IP or user ──
+  // Called by the public /search form BEFORE login to show estimated SIM
+  // value, so no auth is required. Anonymous visitors are rate limited by IP;
+  // logged-in users get a higher limit keyed by their user sub.
   const ip =
     req.headers.get("x-forwarded-for")?.split(",")[0]?.trim() ||
     req.headers.get("x-real-ip") ||
     "unknown";
 
-  // 30 requests / 60s per IP → Redis key: rl-sim-value:<ip>
-  const rlOptions = { windowMs: 60_000, max: 30, keyPrefix: "rl-sim-value" };
-  const rl = await checkRateLimit(ip, rlOptions);
+  const user = await getCurrentUser(req);
+
+  const rlOptions = user
+    ? { windowMs: 60_000, max: 60, keyPrefix: "rl-sim-value" }
+    : { windowMs: 60_000, max: 20, keyPrefix: "rl-sim-value" };
+  const rlKey = user ? `sim-value:user:${user.sub}` : `sim-value:anon:${ip}`;
+
+  // Redis: fail-open if Redis down
+  const rl = await checkRateLimit(rlKey, rlOptions);
   if (!rl.allowed) {
     return NextResponse.json(
-      { error: "too_many_requests" },
+      { error: "too_many_requests", message: "تعداد درخواست‌های شما بیش از حد مجاز است، لطفاً کمی بعد تلاش کنید." },
       { status: 429, headers: getRateLimitHeaders(rlOptions, rl) }
     );
   }
@@ -84,6 +92,14 @@ export async function GET(req: NextRequest) {
     const searchParams = req.nextUrl.searchParams;
     const phoneNumber = searchParams.get("phoneNumber");
     const condition = searchParams.get("condition");
+
+    // 0912-only server-side validation for the public form
+    if (!phoneNumber || !/^0912\d{7}$/.test(phoneNumber)) {
+      return NextResponse.json(
+        { message: "شماره موبایل نامعتبر: فقط شماره‌های با پیش‌شماره 0912 پشتیبانی می‌شوند." },
+        { status: 400 }
+      );
+    }
 
     const validatedParams = querySchema.parse({ phoneNumber, condition });
 

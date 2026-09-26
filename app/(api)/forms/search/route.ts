@@ -1,7 +1,7 @@
 import { NextResponse, NextRequest } from "next/server";
 import { prisma } from "@/lib/prisma";
 import { resolveAgentId } from "@/lib/forms/agent-resolver";
-import { getCurrentUser } from "@/lib/auth-guard";
+import { getVerifiedUser } from "@/lib/auth-guard";
 import { z } from "zod";
 import { normalizeCustomerForm } from "@/lib/customer-form-normalizer";
 import { getWorkflowCodeByFormType } from "@/lib/workflow-code-map";
@@ -42,7 +42,7 @@ export async function POST(req: NextRequest) {
 
   try {
     const agentId = await resolveAgentId(req);
-    const authUser = await getCurrentUser(req);
+    const authUser = await getVerifiedUser(req);
     const userId = authUser?.sub ?? null;
 
     const body = await req.json();
@@ -108,23 +108,37 @@ export async function POST(req: NextRequest) {
         return apiError("DUPLICATE_REQUEST", "A similar request was submitted recently", 409);
       }
     } else {
-      const latest = await findLatestPotentialDuplicate(
+      // Duplicate detection must check BOTH numbers: ph (queried SIM, may be
+      // absent) and uph (customer contact number). NOTE: for search forms the
+      // normalizer stores uph in customer_forms.phone, so a `ph` match must
+      // query the formData JSON instead of the phone column.
+      const dupParams = (phone: string) =>
         agentId
-          ? {
-              formType: normalized.formType,
-              phone: normalized.phone,
-              agentId,
-            }
-          : {
-              formType: normalized.formType,
-              phone: normalized.phone,
-            }
-      );
+          ? { formType: normalized.formType, phone, agentId }
+          : { formType: normalized.formType, phone };
 
-      if (latest && isRecentWithinSeconds(latest.createdAt, 10)) {
+      const [dupByQuery, dupByContact] = await Promise.all([
+        validatedData.ph
+          ? prisma.customerForm.findFirst({
+              where: {
+                formType: normalized.formType,
+                formData: { path: ["ph"], equals: validatedData.ph },
+                ...(agentId ? { agentId } : {}),
+              },
+              orderBy: { createdAt: "desc" },
+            })
+          : Promise.resolve(null),
+        findLatestPotentialDuplicate(dupParams(validatedData.uph)),
+      ]);
+
+      const isDuplicate =
+        (dupByQuery && isRecentWithinSeconds(dupByQuery.createdAt, 10)) ||
+        (dupByContact && isRecentWithinSeconds(dupByContact.createdAt, 10));
+
+      if (isDuplicate) {
         return apiError(
           "DUPLICATE_REQUEST",
-          "A similar request was submitted recently",
+          "درخواست مشابهی اخیراً ثبت شده است. لطفاً کمی بعد دوباره تلاش کنید.",
           409
         );
       }

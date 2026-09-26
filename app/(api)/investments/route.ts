@@ -1,7 +1,7 @@
 import { NextResponse, NextRequest } from "next/server";
 import { prisma } from "@/lib/prisma";
 import { resolveAgentId } from "@/lib/forms/agent-resolver";
-import { getCurrentUser } from "@/lib/auth-guard";
+import { getVerifiedUser } from "@/lib/auth-guard";
 import { z } from "zod";
 import { normalizeCustomerForm } from "@/lib/customer-form-normalizer";
 import { getWorkflowCodeByFormType } from "@/lib/workflow-code-map";
@@ -29,7 +29,9 @@ const investmentFormSchema = z.object({
   fm: z.string().min(2, "نام خانوادگی الزامی است"),
   ph: z.string().regex(/^09\d{9}$/, "شماره موبایل باید ۱۱ رقمی و با 09 شروع شود"),
   hk: z.string().min(1, "نحوه آشنایی الزامی است"),
-  acc: z.literal(true),
+  acc: z.literal(true, {
+    error: "پذیرش قوانین سرمایه‌گذاری الزامی است",
+  }),
 });
 
 /**
@@ -66,7 +68,7 @@ export async function POST(req: NextRequest) {
 
     // Resolve agent attribution
     const agentId = await resolveAgentAttribution(req, body);
-    const authUser = await getCurrentUser(req);
+    const authUser = await getVerifiedUser(req);
     const userId = authUser?.sub ?? null;
 
     const investmentFormType = `invest_${validatedData.it}`;

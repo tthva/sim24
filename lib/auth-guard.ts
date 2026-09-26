@@ -57,6 +57,49 @@ export async function getCurrentUser(
   }
 }
 
+/**
+ * getVerifiedUser: getCurrentUser + DB verification.
+ * Returns the JWT payload ONLY if the user still exists and is active:
+ * - role "user" (EndUser): verified against the end_users table. EndUsers have
+ *   no tokenVersion column, so only `active` is checked.
+ * - other roles (admin/operator/agent): verified against the users table with
+ *   `active` + `tokenVersion` match (token revoked via logout-all / theft).
+ * Returns null otherwise, so callers can safely DROP
+ * attribution (treat as anonymous) instead of trusting a possibly-stale JWT.
+ * Lightweight by design: skips the session check done by requireAuth.
+ */
+export async function getVerifiedUser(
+  request: NextRequest
+): Promise<AuthUser | null> {
+  const user = await getCurrentUser(request);
+  if (!user) return null;
+
+  try {
+    if (user.role === "user") {
+      // EndUser authentication path — end_users table has no tokenVersion.
+      const endUser = await prisma.endUser.findUnique({
+        where: { id: user.sub },
+        select: { active: true },
+      });
+      if (!endUser || endUser.active !== true) return null;
+    } else {
+      // Operator/Admin/Agent path — users table with tokenVersion revocation.
+      const dbUser = await prisma.user.findUnique({
+        where: { id: user.sub },
+        select: { active: true, tokenVersion: true },
+      });
+      if (!dbUser || dbUser.active !== true) return null;
+      if (dbUser.tokenVersion !== user.tokenVersion) return null;
+    }
+  } catch {
+    // DB failure — fail closed: never attribute an unverifiable user.
+    return null;
+  }
+
+  return user;
+}
+
+
 // ─── Sentinel ──────────────────────────────────────────────────
 
 const DB_FAILURE_SENTINEL = Symbol("db_failure");

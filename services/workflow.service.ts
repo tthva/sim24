@@ -392,7 +392,13 @@ export async function completeStep(input: CompleteStepInput): Promise<ApiRespons
     });
 
     if (!stepInstance) return errorResponse("Step instance not found", null, "STEP_NOT_FOUND");
-    if (stepInstance.status === "COMPLETED") return errorResponse("Step already completed", "STEP_ALREADY_COMPLETED");
+
+    // NOTE: no pre-check for status === "COMPLETED" here on purpose — the
+    // conditional updateMany below is the single source of truth. Two
+    // concurrent requests under READ COMMITTED could both read a non-COMPLETED
+    // status and both pass a pre-check; only the first conditional update wins
+    // (the second matches 0 rows and short-circuits), so the next step can
+    // never be created twice.
 
     // IDOR protection: only the assigned operator (or an admin) may complete this step.
     // role=operator alone does not allow completing other operators' tasks.

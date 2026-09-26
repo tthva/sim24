@@ -1,26 +1,13 @@
 import { NextRequest, NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
-import { verifyToken } from "@/lib/jwt";
+import { requireRole } from "@/lib/auth-guard";
 import { validateCsrf } from "@/lib/csrf";
 
 // GET /api/consignments — list all consignment items
 export async function GET(req: NextRequest) {
   try {
-    const token = req.cookies.get("token")?.value;
-    if (!token) {
-      return NextResponse.json(
-        { success: false, message: "احراز هویت لازم است" },
-        { status: 401 }
-      );
-    }
-    try {
-      verifyToken(token);
-    } catch {
-      return NextResponse.json(
-        { success: false, message: "توکن نامعتبر است" },
-        { status: 401 }
-      );
-    }
+    const auth = await requireRole(req, ["operator", "admin"]);
+    if (auth.response) return auth.response;
 
     const items = await prisma.consignmentItem.findMany({
       where: { deletedAt: null },
@@ -43,21 +30,8 @@ export async function POST(req: NextRequest) {
   { const __csrf = validateCsrf(req); if (__csrf) return __csrf; }
 
   try {
-    const token = req.cookies.get("token")?.value;
-    if (!token) {
-      return NextResponse.json(
-        { success: false, message: "احراز هویت لازم است" },
-        { status: 401 }
-      );
-    }
-    try {
-      verifyToken(token);
-    } catch {
-      return NextResponse.json(
-        { success: false, message: "توکن نامعتبر است" },
-        { status: 401 }
-      );
-    }
+    const auth = await requireRole(req, ["operator", "admin"]);
+    if (auth.response) return auth.response;
 
     const body = await req.json();
     // Ù†Ø±Ù…Ø§Ù„Ø³Ø§Ø²ÛŒ: Ø§Ø±Ù‚Ø§Ù… ÙØ§Ø±Ø³ÛŒ Ø¨Ù‡ Ø§Ù†Ú¯Ù„ÛŒØ³ÛŒØŒ Ø­Ø°ÙÙ Ø­Ø±ÙˆÙ Ùˆ Ú©Ø§Ø±Ø§Ú©ØªØ±Ù‡Ø§ÛŒ ØºÛŒØ±Ø±Ù‚Ù…ÛŒ

@@ -1,7 +1,7 @@
 import { NextResponse, NextRequest } from "next/server";
 import { prisma } from "@/lib/prisma";
 import { resolveAgentId } from "@/lib/forms/agent-resolver";
-import { getCurrentUser } from "@/lib/auth-guard";
+import { getVerifiedUser } from "@/lib/auth-guard";
 import { z } from "zod";
 import { normalizeCustomerForm } from "@/lib/customer-form-normalizer";
 import { getWorkflowCodeByFormType } from "@/lib/workflow-code-map";
@@ -39,7 +39,10 @@ const buyFormSchema = z.object({
   birthDay: z.string().min(1, "روز تولد الزامی است"),
   birthMonth: z.string().min(1, "ماه تولد الزامی است"),
   birthYear: z.string().min(4, "سال تولد الزامی است"),
-  pref: z.string().regex(/^0912\d{7}$/, "شماره دلخواه باید ۱۱ رقم و با 0912 شروع شود").optional(),
+  pref: z.string().optional().refine(
+    (v) => !v || /^0912\d{7}$/.test(v),
+    "شماره دلخواه باید با 0912 شروع شود"
+  ),
   hk: z.string().min(1, "نحوه آشنایی الزامی است"),
   attachmentIds: z.array(z.string()).optional(),
 });
@@ -55,7 +58,10 @@ const installmentFormSchema = z.object({
   hk: z.string().min(1, "نحوه آشنایی الزامی است"),
   prov: z.number({ message: "استان الزامی است" }),
   city: z.number({ message: "شهر الزامی است" }),
-  pref: z.string().regex(/^0912\d{7}$/, "شماره دلخواه باید ۱۱ رقم و با 0912 شروع شود").optional(),
+  pref: z.string().optional().refine(
+    (v) => !v || /^0912\d{7}$/.test(v),
+    "شماره دلخواه باید با 0912 شروع شود"
+  ),
   attachmentIds: z.array(z.string()).optional(),
 });
 
@@ -108,7 +114,7 @@ export async function POST(req: NextRequest) {
 
     // Resolve agent attribution from multiple sources
     const agentId = await resolveAgentAttribution(req, formData);
-    const authUser = await getCurrentUser(req);
+    const authUser = await getVerifiedUser(req);
     const userId = authUser?.sub ?? null;
 
     // Validate form data based on formType

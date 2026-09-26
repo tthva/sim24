@@ -1,86 +1,88 @@
 import { NextRequest, NextResponse } from "next/server";
+import crypto from "crypto";
 import { prisma } from "@/lib/prisma";
 import { errorResponse } from "@/lib/types/api";
+import { checkRateLimit, getRateLimitHeaders } from "@/lib/rate-limiter-redis";
+
+const RATE_LIMIT = {
+  windowMs: 60_000, // 1 minute
+  max: 60, // 60 requests / minute per IP
+};
 
 /**
- * Validates the webhook signature using HMAC-SHA256.
- * The signature is computed from the raw body and compared
- * against the X-CRM-Signature header.
- * 
- * WEBHOOK_SECRET must be set in environment variables.
- * If not set, webhook requests are rejected with 501.
+ * Computes the hex HMAC-SHA256 of the RAW body using the shared secret.
+ * SECURITY: the signature MUST be computed over the raw body bytes (before
+ * JSON parsing) so both sides hash identical input.
  */
-async function validateWebhookSignature(
-  request: NextRequest,
-  rawBody: string
-): Promise<{ valid: boolean; reason?: string }> {
-  const secret = process.env.WEBHOOK_SECRET;
-  if (!secret) {
-    return { valid: false, reason: "WEBHOOK_SECRET not configured" };
-  }
+function signRawBody(rawBody: string, secret: string): string {
+  return crypto.createHmac("sha256", secret).update(rawBody).digest("hex");
+}
 
-  const signatureHeader = request.headers.get("x-crm-signature");
-  if (!signatureHeader) {
-    return { valid: false, reason: "Missing X-CRM-Signature header" };
-  }
-
-  try {
-    const encoder = new TextEncoder();
-    const key = await crypto.subtle.importKey(
-      "raw",
-      encoder.encode(secret),
-      { name: "HMAC", hash: "SHA-256" },
-      false,
-      ["sign"]
-    );
-
-    const signature = await crypto.subtle.sign(
-      "HMAC",
-      key,
-      encoder.encode(rawBody)
-    );
-
-    const computedSignature = Array.from(new Uint8Array(signature))
-      .map((b) => b.toString(16).padStart(2, "0"))
-      .join("");
-
-    // Constant-time comparison to prevent timing attacks
-    if (computedSignature.length !== signatureHeader.length) {
-      return { valid: false, reason: "Invalid signature" };
-    }
-
-    let match = true;
-    for (let i = 0; i < computedSignature.length; i++) {
-      match = match && computedSignature[i] === signatureHeader[i];
-    }
-
-    if (!match) {
-      return { valid: false, reason: "Signature mismatch" };
-    }
-
-    return { valid: true };
-  } catch (err) {
-    console.error("[Webhook] Signature validation error:", err);
-    return { valid: false, reason: "Signature validation failed" };
-  }
+/**
+ * Constant-time hex comparison via crypto.timingSafeEqual.
+ * Returns false when lengths differ (avoids the throw timingSafeEqual would
+ * raise on unequal-length buffers).
+ */
+function timingSafeEqualHex(a: string, b: string): boolean {
+  const bufA = Buffer.from(a, "hex");
+  const bufB = Buffer.from(b, "hex");
+  if (bufA.length !== bufB.length) return false;
+  return crypto.timingSafeEqual(bufA, bufB);
 }
 
 export async function POST(request: NextRequest) {
   try {
-    // Read raw body for signature validation
-    const rawBody = await request.text();
-    
-    // Validate webhook signature
-    const signatureResult = await validateWebhookSignature(request, rawBody);
-    if (!signatureResult.valid) {
-      console.warn("[Webhook] Rejected:", signatureResult.reason);
+    // ─── Rate limiting (fail-open, keyed by client IP) ────────────
+    const ip =
+      request.headers.get("x-forwarded-for") ??
+      request.headers.get("x-real-ip") ??
+      "unknown";
+    const rateKey = `webhook:crm:${ip}`;
+    const rateResult = await checkRateLimit(rateKey, RATE_LIMIT);
+    if (!rateResult.allowed) {
       return NextResponse.json(
-        errorResponse("Unauthorized", signatureResult.reason, "WEBHOOK_UNAUTHORIZED"),
+        errorResponse("تعداد درخواست‌ها بیش از حد مجاز است", null, "RATE_LIMITED"),
+        {
+          status: 429,
+          headers: getRateLimitHeaders(RATE_LIMIT, rateResult),
+        }
+      );
+    }
+
+    // ─── Read RAW body first (signature is over the raw bytes) ──
+    const rawBody = await request.text();
+
+    // ─── HMAC signature verification (FAIL-CLOSED) ────────────────
+    const secret = process.env.WEBHOOK_CRM_SECRET;
+    if (!secret) {
+      console.warn(
+        "[Webhook] WEBHOOK_CRM_SECRET is not configured. Rejecting request (fail-closed)."
+      );
+      return NextResponse.json(
+        errorResponse("دسترسی غیرمجاز", null, "WEBHOOK_UNAUTHORIZED"),
         { status: 401 }
       );
     }
 
-    // Parse body after signature validation
+    const signatureHeader = request.headers.get("x-webhook-signature");
+    if (!signatureHeader) {
+      console.warn("[Webhook] Rejected: missing x-webhook-signature header");
+      return NextResponse.json(
+        errorResponse("دسترسی غیرمجاز", null, "WEBHOOK_UNAUTHORIZED"),
+        { status: 401 }
+      );
+    }
+
+    const computedSignature = signRawBody(rawBody, secret);
+    if (!timingSafeEqualHex(computedSignature, signatureHeader)) {
+      console.warn("[Webhook] Rejected: invalid signature");
+      return NextResponse.json(
+        errorResponse("دسترسی غیرمجاز", null, "WEBHOOK_UNAUTHORIZED"),
+        { status: 401 }
+      );
+    }
+
+    // ─── Parse body AFTER signature verification ─────────────────
     let body: Record<string, unknown>;
     try {
       body = JSON.parse(rawBody);

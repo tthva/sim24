@@ -1,7 +1,7 @@
 import { NextResponse, NextRequest } from "next/server";
 import { prisma } from "@/lib/prisma";
 import { resolveAgentId } from "@/lib/forms/agent-resolver";
-import { getCurrentUser } from "@/lib/auth-guard";
+import { getVerifiedUser } from "@/lib/auth-guard";
 import { z } from "zod";
 import { normalizeCustomerForm } from "@/lib/customer-form-normalizer";
 import { getWorkflowCodeByFormType } from "@/lib/workflow-code-map";
@@ -356,7 +356,7 @@ export async function POST(req: NextRequest) {
       case "sell_market":
       case "sell_cons":
         try {
-          const authUser = await getCurrentUser(req);
+          const authUser = await getVerifiedUser(req);
           const userId = authUser?.sub ?? null;
           const result: any = await handleSellForm(formData, formType, agentId, req, userId);
           if (result.duplicate) {
