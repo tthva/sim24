@@ -5,6 +5,17 @@ import { useRouter } from "next/navigation";
 import Layout from "@/components/Layout";
 import GlassCard from "@/components/GlassCard";
 
+type FormReport = {
+  summary: {
+    total: number;
+    started: number;
+    conversionRate: number;
+    formTypes: number;
+  };
+  byFormType: { formType: string; count: number; started: number; conversionRate: number }[];
+  daily: { day: string; count: number }[];
+};
+
 type Form = {
   id: string;
   phone: string | null;
@@ -95,6 +106,7 @@ function formatFormValue(key: string, value: any): string {
 export default function AdminFormsPage() {
   const r = useRouter();
   const [forms, setForms] = useState<Form[]>([]);
+  const [report, setReport] = useState<FormReport | null>(null);
   const [loading, setLoading] = useState(true);
   const [selectedForm, setSelectedForm] = useState<Form | null>(null);
   const [filters, setFilters] = useState({
@@ -107,7 +119,29 @@ export default function AdminFormsPage() {
 
   useEffect(() => {
     fetchForms();
+    fetchReport();
   }, []);
+
+  const fetchReport = async () => {
+    try {
+      const res = await fetch(`/api/admin/reports/forms`);
+      if (!res.ok) return;
+      const data = await res.json();
+      setReport(data);
+    } catch {
+      // Non-fatal: KPIs simply stay hidden if the report endpoint fails.
+    }
+  };
+
+  const downloadCsv = () => {
+    const params = new URLSearchParams({ format: "csv" });
+    if (filters.formType) params.set("formType", filters.formType);
+    if (filters.startDate) params.set("dateFrom", filters.startDate);
+    if (filters.endDate) params.set("dateTo", filters.endDate);
+    if (filters.phone) params.set("phone", filters.phone);
+    if (filters.agentId) params.set("agentId", filters.agentId);
+    window.location.href = `/api/admin/reports/forms?${params}`;
+  };
 
   const fetchForms = async () => {
     try {
@@ -170,9 +204,17 @@ export default function AdminFormsPage() {
             ch={
               <div className="flex justify-between items-center">
                 <h1 className="text-white text-xl font-bold">فرم‌های ثبت‌شده</h1>
-                <button onClick={() => r.back()} className="text-white/60 text-sm">
-                  بازگشت
-                </button>
+                <div className="flex items-center gap-3">
+                  <button
+                    onClick={downloadCsv}
+                    className="bg-white/15 text-white text-sm rounded px-4 py-2 hover:bg-white/25"
+                  >
+                    خروجی CSV
+                  </button>
+                  <button onClick={() => r.back()} className="text-white/60 text-sm">
+                    بازگشت
+                  </button>
+                </div>
               </div>
             }
           />
@@ -243,6 +285,63 @@ export default function AdminFormsPage() {
               </div>
             }
           />
+
+          {report && (
+            <GlassCard
+              cls="w-full p-6"
+              ch={
+                <div>
+                  <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
+                    <div className="bg-white/5 rounded-xl p-4">
+                      <div className="text-white/50 text-sm">کل ثبت‌ها</div>
+                      <div className="text-white text-2xl font-bold mt-1">
+                        {report.summary.total.toLocaleString("fa-IR")}
+                      </div>
+                    </div>
+                    <div className="bg-white/5 rounded-xl p-4">
+                      <div className="text-white/50 text-sm">شروع ورک‌فلو</div>
+                      <div className="text-[#51BB70] text-2xl font-bold mt-1">
+                        {report.summary.started.toLocaleString("fa-IR")}
+                      </div>
+                    </div>
+                    <div className="bg-white/5 rounded-xl p-4">
+                      <div className="text-white/50 text-sm">نرخ تبدیل</div>
+                      <div className="text-white text-2xl font-bold mt-1">
+                        {(report.summary.conversionRate * 100).toLocaleString("fa-IR", {
+                          maximumFractionDigits: 1,
+                        })}
+                        ٪
+                      </div>
+                    </div>
+                    <div className="bg-white/5 rounded-xl p-4">
+                      <div className="text-white/50 text-sm">نوع فرم‌ها</div>
+                      <div className="text-white text-2xl font-bold mt-1">
+                        {report.summary.formTypes.toLocaleString("fa-IR")}
+                      </div>
+                    </div>
+                  </div>
+
+                  {report.byFormType.length > 0 && (
+                    <div className="mt-4 flex flex-wrap gap-2">
+                      {report.byFormType.map((ft) => (
+                        <div
+                          key={ft.formType}
+                          className="bg-white/10 rounded-lg px-3 py-2 text-sm text-white"
+                        >
+                          <span className="font-mono">{ft.formType}</span>
+                          <span className="text-white/60 mx-2">•</span>
+                          <span>{ft.count.toLocaleString("fa-IR")}</span>
+                          <span className="text-white/40 mx-1 text-xs">
+                            ({((ft.conversionRate || 0) * 100).toFixed(0)}٪ تبدیل)
+                          </span>
+                        </div>
+                      ))}
+                    </div>
+                  )}
+                </div>
+              }
+            />
+          )}
 
           <GlassCard
             cls="w-full p-6 flex-1"

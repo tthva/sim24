@@ -147,17 +147,13 @@ services:
       redis:
         condition: service_healthy
     healthcheck:
-      test: ["CMD", "curl", "-f", "http://localhost:3000/api/auth/check"]
-      interval: 15s
-      timeout: 10s
-      retries: 5
-      start_period: 45s
-    # Prisma migration runs only on app1 to avoid race conditions
-    command: >
-      sh -c "
-        npx prisma migrate deploy &&
-        node server.js
-      "
+      test: ["CMD-SHELL", "curl -s -o /dev/null -w '%{http_code}' http://localhost:3000/api/auth/check | grep -qE '^(200|401)$'"]
+      interval: 30s
+      timeout: 5s
+      start_period: 30s
+      retries: 3
+    # Migrations run in the dedicated "migrate" service (see below) — not here
+    command: ["node", "server.js"]
 
   # ─── Next.js Application Instance 2 ───
   app2:
@@ -191,11 +187,11 @@ services:
       app1:
         condition: service_started
     healthcheck:
-      test: ["CMD", "curl", "-f", "http://localhost:3000/api/auth/check"]
-      interval: 15s
-      timeout: 10s
-      retries: 5
-      start_period: 45s
+      test: ["CMD-SHELL", "curl -s -o /dev/null -w '%{http_code}' http://localhost:3000/api/auth/check | grep -qE '^(200|401)$'"]
+      interval: 30s
+      timeout: 5s
+      start_period: 30s
+      retries: 3
     command: >
       sh -c "
         node server.js
@@ -235,6 +231,22 @@ services:
         echo 'Worker container ready. Connect with BullMQ via REDIS_URL' &&
         tail -f /dev/null
       "
+
+  # ─── Prisma Migrations (one-shot; builder stage ships the prisma CLI) ───
+  migrate:
+    build:
+      context: .
+      dockerfile: Dockerfile
+      target: builder
+    restart: "no"
+    depends_on:
+      postgres:
+        condition: service_healthy
+    environment:
+      DATABASE_URL: postgresql://${POSTGRES_USER}:${POSTGRES_PASSWORD}@postgres:5432/${POSTGRES_DB}
+    command: ["npx", "prisma", "migrate", "deploy"]
+    networks:
+      - sim24-net
 
   # ─── MinIO (S3-compatible Object Storage) ───
   minio:
