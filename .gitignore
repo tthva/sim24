@@ -137,3 +137,12 @@ scripts/_*.txt
 backup_*.dump
 *.dump
 backup_*.sql
+
+# Scratch/audit artifacts (do not commit)
+.ohmyagent/
+*_audit.txt
+*_report.txt
+all_crm_files.txt
+all_crm_routes.txt
+crm_files_audit.txt
+
