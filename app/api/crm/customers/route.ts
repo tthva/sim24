@@ -2,7 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { requirePermission } from "@/lib/auth-guard";
 import { prisma } from "@/lib/prisma";
 import { validateCsrf } from "@/lib/csrf";
-import { hasViewAllPermission, getUserAgentId } from "@/lib/crm/scope";
+import { hasViewAllPermission, getCustomerScopeBranches } from "@/lib/crm/scope";
 import type { Prisma } from "@prisma/client";
 import {
   listCustomers,
@@ -37,25 +37,24 @@ export async function GET(request: NextRequest) {
 
     const page = Math.max(1, filters.page || 1);
     const limit = Math.min(100, Math.max(1, filters.limit || 20));
-    const agentId = await getUserAgentId(userId);
-    if (!agentId) {
-      // No Agent profile and no view_all → fail-closed empty result.
-      return NextResponse.json({
-        success: true,
-        data: { total: 0, page, limit, pages: 1, customers: [] },
-      });
-    }
 
-    // Scoped query — mirrors listCustomers' filter semantics plus ownership.
-    const where: Prisma.CustomerWhereInput = { referralAgentId: agentId };
+    // Phase 4.8c hardening (D1): ownerless customers (referralAgentId IS NULL)
+    // are visible to any user with crm.read; owned rows only to their owner.
+    // The scope branches and the search OR are combined with AND so neither
+    // overwrites the other (both previously lived in `where.OR`).
+    const scopeBranches = await getCustomerScopeBranches(userId);
+    const andClauses: Prisma.CustomerWhereInput[] = [{ OR: scopeBranches }];
     if (filters.search) {
       const q = filters.search.trim();
-      where.OR = [
-        { fullName: { contains: q, mode: "insensitive" } },
-        { primaryPhone: { contains: q } },
-        { customerCode: { contains: q, mode: "insensitive" } },
-      ];
+      andClauses.push({
+        OR: [
+          { fullName: { contains: q, mode: "insensitive" } },
+          { primaryPhone: { contains: q } },
+          { customerCode: { contains: q, mode: "insensitive" } },
+        ],
+      });
     }
+    const where: Prisma.CustomerWhereInput = { AND: andClauses };
     if (filters.segment) where.segment = filters.segment;
     if (filters.status) where.status = filters.status;
     if (filters.tag) where.tags = { some: { tag: filters.tag } };

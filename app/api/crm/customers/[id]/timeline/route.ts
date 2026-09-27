@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
 import { requirePermission } from "@/lib/auth-guard";
-import { hasViewAllPermission, getUserAgentId } from "@/lib/crm/scope";
+import { hasViewAllPermission, canViewCustomer } from "@/lib/crm/scope";
 
 type RouteContext = { params: Promise<{ id: string }> };
 
@@ -61,17 +61,17 @@ export async function GET(request: NextRequest, { params }: RouteContext) {
       );
     }
 
-    // Phase 4.8b-2 scope: without crm.view_all only the owning agent may read.
+    // Phase 4.8b-2 scope, extended by D1 (4.8c hardening): without
+    // crm.view_all a user may read customers they own AND ownerless ones
+    // (referralAgentId IS NULL). Kept in sync with the list endpoint via
+    // lib/crm/scope.ts so the list and the detail feed never disagree.
     const userId = auth.user.sub;
     const canViewAll = await hasViewAllPermission(userId);
-    if (!canViewAll) {
-      const agentId = await getUserAgentId(userId);
-      if (!agentId || customer.referralAgentId !== agentId) {
-        return NextResponse.json(
-          { success: false, error: { code: "FORBIDDEN", message: "دسترسی غیر مجاز" } },
-          { status: 403 }
-        );
-      }
+    if (!canViewAll && !(await canViewCustomer(userId, customer.referralAgentId))) {
+      return NextResponse.json(
+        { success: false, error: { code: "FORBIDDEN", message: "دسترسی غیر مجاز" } },
+        { status: 403 }
+      );
     }
 
     // ── Fetch all sources in parallel ──
