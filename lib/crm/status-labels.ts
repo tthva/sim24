@@ -24,6 +24,13 @@ export const WORKFLOW_STATUS_FA: Record<string, string> = {
   CANCELLED: "لغوشده",
 };
 
+// Pseudo-status flags on form_submitted timeline entries (CustomerForm
+// boolean/flag values, NOT workflow enums) — D-A: humanize these too.
+export const FORM_STATUS_FA: Record<string, string> = {
+  workflow_started: "گردش کار شروع شد",
+  submitted: "ثبت‌شده",
+};
+
 export const INTERACTION_TYPE_FA: Record<string, string> = {
   form_submitted: "ثبت فرم",
   workflow_started: "شروع گردش کار",
@@ -55,4 +62,9 @@ export function humanizeWorkflowStatus(s: string | null | undefined): string {
 export function humanizeType(t: string | null | undefined): string {
   if (!t) return "";
   return INTERACTION_TYPE_FA[t] ?? t;
+}
+
+export function humanizeFormStatus(s: string | null | undefined): string {
+  if (!s) return "";
+  return FORM_STATUS_FA[s] ?? s;
 }

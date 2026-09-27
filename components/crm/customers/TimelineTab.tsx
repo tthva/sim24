@@ -20,6 +20,7 @@ import { crmFetch } from "@/lib/crm/client";
 import {
   humanizeStepStatus,
   humanizeWorkflowStatus,
+  humanizeFormStatus,
   humanizeType,
 } from "@/lib/crm/status-labels";
 
@@ -98,11 +99,12 @@ const TYPE_ICON: Record<TimelineEntryType, typeof Play> = {
 const ALL_TYPES = Object.keys(TYPE_FA) as TimelineEntryType[];
 
 // Pick the right Persian map for an entry's status: step statuses vs
-// workflow-instance statuses vs free-form statuses (submitted, won, lost,
-// pinned, sent… which stay as-is — they're not workflow enums).
+// workflow-instance statuses vs form pseudo-status flags (D-A) vs
+// free-form statuses (won, lost, pinned, sent… stay as-is).
 const humanizeStatusFor = (type: TimelineEntryType, status: string): string => {
   if (type.startsWith("step_")) return humanizeStepStatus(status);
   if (type === "workflow_started") return humanizeWorkflowStatus(status);
+  if (type === "form_submitted") return humanizeFormStatus(status);
   return status;
 };
 
