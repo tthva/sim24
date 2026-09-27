@@ -172,6 +172,13 @@ model UserRoleAssignment {
 
 model CustomerForm {
   id              String       @id @default(cuid())
+  // NOTE: There is NO FK from CustomerForm to Customer. The link is by phone
+  // string only (Customer.primaryPhone === CustomerForm.phone), and is
+  // resolved at runtime by lib/crm/customer-resolver.ts. This is FRAGILE:
+  // renaming a customer's phone (or a form storing an un-normalised number)
+  // silently breaks the join — the 2026-09-27 backfill had to repair exactly
+  // that class of drift. Backlog: consider a nullable customerId FK (or a
+  // resolved-customer column) in a future schema migration.
   phone           String?
   fullName        String?
   nationalId      String?
