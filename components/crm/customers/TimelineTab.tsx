@@ -12,10 +12,16 @@ import {
   Target,
   ThumbsDown,
   Trophy,
+  SkipForward,
   UserPlus,
 } from "lucide-react";
 import CrmCard from "@/components/crm/common/CrmCard";
 import { crmFetch } from "@/lib/crm/client";
+import {
+  humanizeStepStatus,
+  humanizeWorkflowStatus,
+  humanizeType,
+} from "@/lib/crm/status-labels";
 
 // ─── Types (mirror of API contract, Phase 4.8c) ──────────
 type TimelineEntryType =
@@ -24,6 +30,7 @@ type TimelineEntryType =
   | "step_assigned"
   | "step_completed"
   | "step_rejected"
+  | "step_skipped"
   | "communication"
   | "opportunity_created"
   | "opportunity_won"
@@ -48,6 +55,7 @@ const TYPE_FA: Record<TimelineEntryType, string> = {
   step_assigned: "ارجاع مرحله",
   step_completed: "تکمیل مرحله",
   step_rejected: "رد مرحله",
+  step_skipped: "پرش مرحله",
   communication: "ارتباط",
   opportunity_created: "فرصت جدید",
   opportunity_won: "برد فرصت",
@@ -62,6 +70,7 @@ const TYPE_COLOR: Record<TimelineEntryType, string> = {
   step_assigned: "#ff8c50",
   step_completed: "#51BB70",
   step_rejected: "#ff7a7a",
+  step_skipped: "#a0aabe",
   communication: "#51BBFE",
   opportunity_created: "#ff8c50",
   opportunity_won: "#51BB70",
@@ -77,6 +86,7 @@ const TYPE_ICON: Record<TimelineEntryType, typeof Play> = {
   step_assigned: UserPlus,
   step_completed: CircleCheck,
   step_rejected: CircleX,
+  step_skipped: SkipForward,
   communication: MessageSquare,
   opportunity_created: Target,
   opportunity_won: Trophy,
@@ -86,6 +96,15 @@ const TYPE_ICON: Record<TimelineEntryType, typeof Play> = {
 };
 
 const ALL_TYPES = Object.keys(TYPE_FA) as TimelineEntryType[];
+
+// Pick the right Persian map for an entry's status: step statuses vs
+// workflow-instance statuses vs free-form statuses (submitted, won, lost,
+// pinned, sent… which stay as-is — they're not workflow enums).
+const humanizeStatusFor = (type: TimelineEntryType, status: string): string => {
+  if (type.startsWith("step_")) return humanizeStepStatus(status);
+  if (type === "workflow_started") return humanizeWorkflowStatus(status);
+  return status;
+};
 
 const faDateTime = (iso: string | null) =>
   iso
@@ -392,7 +411,9 @@ export function TimelineTab({ customerId }: { customerId: string }) {
                   <div className="flex items-center gap-2 mt-1">
                     <span className="text-white/30 text-[11px]">{faDateTime(e.timestamp)}</span>
                     {e.status && (
-                      <span className="text-white/25 text-[11px]">({e.status})</span>
+                      <span className="text-white/25 text-[11px]">
+                        ({humanizeStatusFor(e.type, e.status)})
+                      </span>
                     )}
                   </div>
                 </div>

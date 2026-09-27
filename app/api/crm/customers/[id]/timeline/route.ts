@@ -12,6 +12,7 @@ export type TimelineEntryType =
   | "step_assigned"
   | "step_completed"
   | "step_rejected"
+  | "step_skipped"
   | "communication"
   | "opportunity_created"
   | "opportunity_won"
@@ -249,6 +250,19 @@ export async function GET(request: NextRequest, { params }: RouteContext) {
             title: `تکمیل مرحله «${stepTitle}»`,
             description: s.notes || null,
             timestamp: s.completedAt.toISOString(),
+            status: s.status,
+            meta: { workflow: wfTitle, stepOrder: s.step.stepOrder, assignee },
+          });
+        }
+
+        // step_skipped — status SKIPPED (exists on StepStatus, invisible before 4.8c hardening)
+        if (s.status === "SKIPPED") {
+          entries.push({
+            id: `step-s-${s.id}`,
+            type: "step_skipped",
+            title: `پرش مرحله «${stepTitle}»`,
+            description: null,
+            timestamp: (s.completedAt ?? s.updatedAt).toISOString(),
             status: s.status,
             meta: { workflow: wfTitle, stepOrder: s.step.stepOrder, assignee },
           });
