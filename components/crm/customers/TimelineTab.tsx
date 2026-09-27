@@ -253,8 +253,32 @@ export function TimelineTab({ customerId }: { customerId: string }) {
           {filtered.map((e, i) => {
             const Icon = TYPE_ICON[e.type];
             const color = TYPE_COLOR[e.type];
+            // Structured rejection fields (4.8c hardening) — rendered
+            // separately for step_rejected, excluded from the generic list.
+            const isRejection = e.type === "step_rejected";
+            const rejectionReason =
+              typeof e.meta?.rejectionReason === "string" ? e.meta.rejectionReason : "";
+            const rejectionNotes =
+              typeof e.meta?.rejectionNotes === "string" ? e.meta.rejectionNotes : "";
+            const rejectedBy =
+              typeof e.meta?.rejectedBy === "string" ? e.meta.rejectedBy : "";
+            const rejectionFilesCount =
+              typeof e.meta?.rejectionFilesCount === "number" ? e.meta.rejectionFilesCount : 0;
             const metaPairs = Object.entries(e.meta || {}).filter(
-              ([, v]) => v !== null && v !== undefined && v !== ""
+              ([k, v]) =>
+                v !== null &&
+                v !== undefined &&
+                v !== "" &&
+                !(
+                  isRejection &&
+                  [
+                    "rejectionReason",
+                    "rejectionCode",
+                    "rejectionNotes",
+                    "rejectionFilesCount",
+                    "rejectedBy",
+                  ].includes(k)
+                )
             );
             return (
               <div key={e.id} className="flex gap-3 pb-4 last:pb-0" data-testid="timeline-entry" data-type={e.type}>
@@ -279,9 +303,42 @@ export function TimelineTab({ customerId }: { customerId: string }) {
                       {TYPE_FA[e.type]}
                     </span>
                   </div>
-                  {e.description && (
+                  {/* Fallback free-text (s.notes) — hidden when a structured
+                      rejection reason takes precedence. */}
+                  {e.description && !(isRejection && rejectionReason) && (
                     <div className="text-white/50 text-xs mt-1 whitespace-pre-wrap break-words">
                       {e.description}
+                    </div>
+                  )}
+                  {isRejection && rejectionReason && (
+                    <div className="mt-1.5 flex flex-col gap-1" data-testid="timeline-rejection">
+                      <div className="flex items-center gap-1.5">
+                        <span className="text-[#ff7a7a] text-xs font-bold">
+                          {rejectionReason}
+                        </span>
+                        {typeof e.meta?.rejectionCode === "string" && e.meta.rejectionCode && (
+                          <span className="text-white/30 text-[10px] font-mono">
+                            ({e.meta.rejectionCode})
+                          </span>
+                        )}
+                      </div>
+                      {rejectionNotes && (
+                        <div className="text-white/50 text-xs whitespace-pre-wrap break-words">
+                          {rejectionNotes}
+                        </div>
+                      )}
+                      {rejectedBy && (
+                        <div className="text-white/40 text-[11px]">— توسط: {rejectedBy}</div>
+                      )}
+                      {rejectionFilesCount > 0 && (
+                        <div
+                          className="inline-flex items-center gap-1 text-[11px] text-[#51BBFE]"
+                          title="نمایش فایل‌ها در نسخه بعدی"
+                          data-testid="timeline-rejection-files"
+                        >
+                          📎 {rejectionFilesCount} فایل ضمیمه
+                        </div>
+                      )}
                     </div>
                   )}
                   {metaPairs.length > 0 && (

@@ -136,6 +136,24 @@ export async function GET(request: NextRequest, { params }: RouteContext) {
         })
       : [];
 
+    // Rejection reason lookup (4.8c hardening, D1/D2): crm_task_rejections
+    // carries no Prisma relation back to WorkflowStepInstance (plain indexed
+    // string, not an FK), so join by stepInstanceId in one batched query.
+    // No N+1 — a single findMany across every step of this customer's flows.
+    const stepInstanceIds = workflowInstances.flatMap((inst) =>
+      inst.stepInstances.map((s) => s.id)
+    );
+    const rejections = stepInstanceIds.length
+      ? await prisma.taskRejection.findMany({
+          where: { stepInstanceId: { in: stepInstanceIds } },
+          include: {
+            reason: true,
+            rejectedBy: { select: { fullName: true, username: true } },
+          },
+        })
+      : [];
+    const rejectionByStep = new Map(rejections.map((r) => [r.stepInstanceId, r]));
+
     const entries: TimelineEntry[] = [];
 
 
@@ -192,6 +210,10 @@ export async function GET(request: NextRequest, { params }: RouteContext) {
 
         // step_rejected — status REJECTED
         if (s.status === "REJECTED") {
+          const rejection = rejectionByStep.get(s.id);
+          // TODO(next session): no attachment-serving route exists under
+          // app/api/crm yet, so only the file count is surfaced. Emit
+          // meta.rejectionFilesUrl once that route lands (D2).
           entries.push({
             id: `step-r-${s.id}`,
             type: "step_rejected",
@@ -199,7 +221,18 @@ export async function GET(request: NextRequest, { params }: RouteContext) {
             description: s.notes || null,
             timestamp: (s.completedAt ?? s.updatedAt).toISOString(),
             status: s.status,
-            meta: { workflow: wfTitle, stepOrder: s.step.stepOrder, assignee },
+            meta: {
+              workflow: wfTitle,
+              stepOrder: s.step.stepOrder,
+              assignee,
+              rejectionReason: rejection?.reason?.name ?? null,
+              rejectionCode: rejection?.reason?.code ?? null,
+              rejectionNotes: rejection?.notes ?? null,
+              rejectionFilesCount: rejection?.attachments?.length ?? 0,
+              rejectedBy: rejection?.rejectedBy
+                ? rejection.rejectedBy.fullName || rejection.rejectedBy.username
+                : null,
+            },
           });
         }
 
