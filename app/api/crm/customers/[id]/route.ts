@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { requirePermission } from "@/lib/auth-guard";
 import { validateCsrf } from "@/lib/csrf";
+import { hasViewAllPermission, canViewCustomer } from "@/lib/crm/scope";
 import {
   getCustomerById,
   updateCustomer,
@@ -23,6 +24,19 @@ export async function GET(request: NextRequest, { params }: RouteContext) {
         { status: 404 }
       );
     }
+
+    // Ownership scope (D1): without crm.view_all a user may read only
+    // ownerless customers (referralAgentId IS NULL) or ones they own.
+    // Mirrors the list endpoint and the timeline feed via lib/crm/scope.ts.
+    const userId = auth.user.sub;
+    const canViewAll = await hasViewAllPermission(userId);
+    if (!canViewAll && !(await canViewCustomer(userId, customer.referralAgentId))) {
+      return NextResponse.json(
+        { success: false, error: { code: "FORBIDDEN", message: "دسترسی غیر مجاز" } },
+        { status: 403 }
+      );
+    }
+
     return NextResponse.json({ success: true, data: customer });
   } catch (error) {
     console.error("[CRM] getCustomer failed:", error);
