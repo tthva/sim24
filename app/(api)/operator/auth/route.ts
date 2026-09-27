@@ -154,15 +154,46 @@ export async function POST(request: NextRequest) {
     // department/role fallback (getLandingPage checks this flag before
     // the operator/admin fallbacks, but after the username fast path).
     const crmRoleStart = start();
-    const crmRole = await prisma.role.findFirst({
-      where: {
-        code: { in: ["crm_manager", "crm_operator"] },
-        assignments: { some: { userId: user.id } },
-      },
-      select: { code: true },
-    });
+    // Fail-closed: if this lookup errors, hasCrmAccess stays false so the
+    // user falls back to normal operator/admin landing (login never blocked).
+    let hasCrmAccess = false;
+    try {
+      const crmRole = await prisma.role.findFirst({
+        where: {
+          code: { in: ["crm_manager", "crm_operator"] },
+          assignments: { some: { userId: user.id } },
+        },
+        select: { code: true },
+      });
+      hasCrmAccess = !!crmRole;
+    } catch (e) {
+      const errMsg = e instanceof Error ? e.message : typeof e === "string" ? e : "unknown_error";
+      logEvent("error", {
+        event: "crm_role_lookup_failed",
+        path: "/api/operator/auth",
+        method: "POST",
+        role: "operator",
+        userId: user.id,
+        email: String(username),
+        ip, userAgent, requestId,
+        status: 0,
+        reason: "crm_role_lookup_failed",
+        error: errMsg,
+      });
+    }
     log("operator_login_crm_role_lookup", elapsed(crmRoleStart));
-    const hasCrmAccess = !!crmRole;
+
+    // ALL DB role codes travel in the JWT `roles` array so the /crm
+    // middleware gate (ROLE_PREFIX_MAP) can admit CRM users by ANY role.
+    // The primary `role` claim stays admin/operator (userType-based) so
+    // workflow landings and existing consumers are unchanged.
+    const allAssignments = await prisma.userRoleAssignment.findMany({
+      where: { userId: user.id },
+      include: { role: { select: { code: true } } },
+    });
+    const jwtRoles = allAssignments
+      .map((a) => a.role.code as "admin" | "agent" | "operator" | "user" | "crm_manager" | "crm_operator")
+      .filter((code, i, arr) => arr.indexOf(code) === i);
 
     const secure = isSecureRequest(request);
 
@@ -238,6 +269,7 @@ export async function POST(request: NextRequest) {
       const token = await signToken({
         sub: user.id,
         role: "admin",
+        roles: jwtRoles,
         username: user.username,
         userType: "ADMIN",
         departmentId: profile.department ?? null,
@@ -314,6 +346,7 @@ export async function POST(request: NextRequest) {
       const token = await signToken({
         sub: user.id,
         role: "operator",
+        roles: jwtRoles,
         username: user.username,
         userType: "AGENT",
         departmentId: (department as any) ?? null,

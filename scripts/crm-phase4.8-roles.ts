@@ -11,10 +11,15 @@
  * 4. Assigns:
  *    - operator_product -> crm_operator
  *    - admin            -> crm_manager (keeps existing admin role)
+ *    - crm_tester       -> crm_manager (Phase 4.8b-3 CRM-only QA account;
+ *                         held ONLY crm_manager, never "operator")
  * 5. Creates convention-matching CRM test users:
  *    - operator_crm / operator123 — crm_operator role
  *    - crm_admin / operator123 — crm_manager role
- *    Both are AGENT users with a PRICE department profile.
+ *    - crm_tester / operator123 — crm_manager role ONLY (Phase 4.8b-3)
+ *    All are AGENT users with a PRICE department profile. (Agent.department is
+ *    a non-nullable enum, so a null department is not representable; CRM
+ *    access drives the landing page regardless of department.)
  *
  * Run with: npx tsx scripts/crm-phase4.8-roles.ts
  */
@@ -43,6 +48,8 @@ const ROLE_PERMISSIONS: Record<string, string[]> = {
 const TEST_ASSIGNMENTS: Array<{ username: string; roleCode: string }> = [
   { username: "operator_product", roleCode: "crm_operator" },
   { username: "admin", roleCode: "crm_manager" },
+  // crm_tester is seeded via CRM_USERS below (crm_manager only), so it is no
+  // longer listed here.
 ];
 
 // Convention-matching CRM UI-test users.
@@ -59,6 +66,14 @@ const CRM_USERS = [
     username: "crm_admin",
     password: "operator123",
     fullName: "مدیر CRM",
+    roleCode: "crm_manager",
+  },
+  // Phase 4.8b-3: dedicated CRM-only QA account. Holds ONLY crm_manager
+  // (never "operator"), so its landing page is driven purely by CRM access.
+  {
+    username: "crm_tester",
+    password: "operator123",
+    fullName: "CRM Tester",
     roleCode: "crm_manager",
   },
 ];
@@ -116,13 +131,9 @@ async function main() {
     console.log(`  ✅ assignment ensured: ${username} -> ${roleCode}`);
   }
 
-  // crm_tester is retained because it has session references, but it is
-  // kept unassigned so it cannot be used as a CRM test credential.
-  const legacyCrmTester = await prisma.user.findUnique({ where: { username: "crm_tester" } });
-  if (legacyCrmTester) {
-    await prisma.userRoleAssignment.deleteMany({ where: { userId: legacyCrmTester.id } });
-    console.log("  ✅ legacy crm_tester retained and unassigned (session references exist)");
-  }
+  // crm_tester is now assigned via TEST_ASSIGNMENTS above (crm_operator), so
+  // it is no longer an orphan. The user row itself is retained — not deleted —
+  // because it has session references that would block a hard delete.
 
   // Convention-matching CRM users (idempotent upsert by username)
   for (const u of CRM_USERS) {
@@ -160,6 +171,31 @@ async function main() {
     touched.assignments += 1;
     console.log(`  ✅ CRM test user ready: ${u.username} / ${u.password} -> ${u.roleCode}`);
   }
+
+  // Phase 4.8b-3: crm_tester must hold ONLY the crm_manager role. Remove any
+  // legacy crm_operator assignment left by earlier seeds. Scoped strictly to
+  // crm_tester, so no other user's assignments are touched.
+  {
+    const crmTester = await prisma.user.findUnique({ where: { username: "crm_tester" } });
+    const crmOperatorRole = await prisma.role.findUnique({ where: { code: "crm_operator" } });
+    if (crmTester && crmOperatorRole) {
+      const removed = await prisma.userRoleAssignment.deleteMany({
+        where: { userId: crmTester.id, roleId: crmOperatorRole.id },
+      });
+      console.log(`  🧹 crm_tester legacy crm_operator assignment removed: ${removed.count}`);
+    }
+  }
+
+  const crmTesterCheck = await prisma.user.findUnique({
+    where: { username: "crm_tester" },
+    include: { roleAssignments: { include: { role: { select: { code: true } } } } },
+  });
+  const crmTesterRoles = (crmTesterCheck?.roleAssignments ?? []).map((a) => a.role.code);
+  console.log(
+    `  ✅ crm_tester created/updated, assignment crm_manager = ${
+      crmTesterRoles.includes("crm_manager") ? "yes" : "no"
+    } (roles: ${crmTesterRoles.join(", ") || "none"})`
+  );
 
   console.log("📊 summary:", JSON.stringify(touched));
 }
