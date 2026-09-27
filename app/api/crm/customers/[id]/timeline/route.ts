@@ -170,6 +170,11 @@ export async function GET(request: NextRequest, { params }: RouteContext) {
           formType: f.formType,
           workflowCode: f.workflowCode,
           customerFormId: f.id,
+          // Tracking code = the CustomerForm cuid (no short-code column exists).
+          trackingCode: f.id,
+          // TODO(next session): the /crm/customers/[id]/forms/[formId] page does
+          // not exist yet; the UI shows the code for copy but does not link this.
+          formDeepLink: `/crm/customers/${id}/forms/${f.id}`,
         },
       });
     }

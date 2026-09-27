@@ -104,6 +104,7 @@ export function TimelineTab({ customerId }: { customerId: string }) {
   const [enabled, setEnabled] = useState<Set<TimelineEntryType>>(new Set(ALL_TYPES));
   const [fromDate, setFromDate] = useState("");
   const [toDate, setToDate] = useState("");
+  const [copiedId, setCopiedId] = useState<string | null>(null);
 
   const load = useCallback(async () => {
     setLoading(true);
@@ -264,6 +265,25 @@ export function TimelineTab({ customerId }: { customerId: string }) {
               typeof e.meta?.rejectedBy === "string" ? e.meta.rejectedBy : "";
             const rejectionFilesCount =
               typeof e.meta?.rejectionFilesCount === "number" ? e.meta.rejectionFilesCount : 0;
+            // Tracking code (4.8c hardening, sub-task 2) — shown monospace with
+            // a copy button on form_submitted entries. Copied-state lives at
+            // component level (hooks must not be called inside .map()).
+            const isForm = e.type === "form_submitted";
+            const trackingCode =
+              typeof e.meta?.trackingCode === "string" ? e.meta.trackingCode : "";
+            const copied = copiedId === e.id;
+            const copyCode = async () => {
+              try {
+                await navigator.clipboard.writeText(trackingCode);
+                setCopiedId(e.id);
+                setTimeout(
+                  () => setCopiedId((cur) => (cur === e.id ? null : cur)),
+                  2000
+                );
+              } catch {
+                /* clipboard unavailable — ignore */
+              }
+            };
             const metaPairs = Object.entries(e.meta || {}).filter(
               ([k, v]) =>
                 v !== null &&
@@ -278,7 +298,8 @@ export function TimelineTab({ customerId }: { customerId: string }) {
                     "rejectionFilesCount",
                     "rejectedBy",
                   ].includes(k)
-                )
+                ) &&
+                !(isForm && (k === "trackingCode" || k === "formDeepLink"))
             );
             return (
               <div key={e.id} className="flex gap-3 pb-4 last:pb-0" data-testid="timeline-entry" data-type={e.type}>
@@ -308,6 +329,24 @@ export function TimelineTab({ customerId }: { customerId: string }) {
                   {e.description && !(isRejection && rejectionReason) && (
                     <div className="text-white/50 text-xs mt-1 whitespace-pre-wrap break-words">
                       {e.description}
+                    </div>
+                  )}
+                  {isForm && trackingCode && (
+                    <div
+                      className="mt-1 flex items-center gap-1.5"
+                      data-testid="timeline-tracking-code"
+                    >
+                      <span className="font-mono text-[11px] text-white/60" dir="ltr">
+                        {trackingCode}
+                      </span>
+                      <button
+                        onClick={copyCode}
+                        className="text-[10px] font-bold text-[#51BBFE] hover:underline"
+                        data-testid="timeline-tracking-copy"
+                        aria-label="کد پیگیری"
+                      >
+                        {copied ? "کپی شد ✓" : "کپی"}
+                      </button>
                     </div>
                   )}
                   {isRejection && rejectionReason && (
