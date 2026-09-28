@@ -1,7 +1,8 @@
 import { NextRequest, NextResponse } from "next/server";
+import { prisma } from "@/lib/prisma";
 import { requirePermission } from "@/lib/auth-guard";
 import { validateCsrf } from "@/lib/csrf";
-import { hasViewAllPermission, canViewCustomer } from "@/lib/crm/scope";
+import { hasViewAllPermission, canViewCustomer, canViewCustomerData } from "@/lib/crm/scope";
 import {
   getCustomerById,
   updateCustomer,
@@ -57,6 +58,27 @@ export async function PATCH(request: NextRequest, { params }: RouteContext) {
     if (auth.response) return auth.response;
 
     const { id } = await params;
+
+    // Write-IDOR fix (D-WRITE): previously any crm.manage user could edit
+    // any customer. Apply the owner scope — 403 (not 404) since the id is
+    // already known via the path (D-403).
+    const target = await prisma.customer.findUnique({
+      where: { id },
+      select: { referralAgentId: true },
+    });
+    if (!target) {
+      return NextResponse.json(
+        { success: false, error: { code: "NOT_FOUND", message: "مشتری یافت نشد" } },
+        { status: 404 }
+      );
+    }
+    if (!(await canViewCustomerData(auth.user.sub, target.referralAgentId))) {
+      return NextResponse.json(
+        { success: false, error: { code: "FORBIDDEN", message: "دسترسی غیر مجاز" } },
+        { status: 403 }
+      );
+    }
+
     const body = await request.json();
     const customer = await updateCustomer(id, {
       fullName: body.fullName,
@@ -91,6 +113,25 @@ export async function DELETE(request: NextRequest, { params }: RouteContext) {
     if (auth.response) return auth.response;
 
     const { id } = await params;
+
+    // Write-IDOR fix (D-WRITE): same owner scope as PATCH above.
+    const target = await prisma.customer.findUnique({
+      where: { id },
+      select: { referralAgentId: true },
+    });
+    if (!target) {
+      return NextResponse.json(
+        { success: false, error: { code: "NOT_FOUND", message: "مشتری یافت نشد" } },
+        { status: 404 }
+      );
+    }
+    if (!(await canViewCustomerData(auth.user.sub, target.referralAgentId))) {
+      return NextResponse.json(
+        { success: false, error: { code: "FORBIDDEN", message: "دسترسی غیر مجاز" } },
+        { status: 403 }
+      );
+    }
+
     const customer = await softDeleteCustomer(id);
     return NextResponse.json({ success: true, data: customer });
   } catch (error: any) {
