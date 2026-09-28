@@ -12,7 +12,8 @@
     "seed": "tsx prisma/seed.ts",
     "clean": "node -e \"require('fs').rmSync('.next', { recursive: true, force: true })\"",
     "test:crm-owner-scope": "node tests/crm/owner-scope.test.mjs",
-    "test:crm-skipped": "node tests/crm/skipped-step.test.mjs"
+    "test:crm-skipped": "node tests/crm/skipped-step.test.mjs",
+    "test:crm-idor-read": "node tests/crm/idor-read.test.mjs"
   },
   "prisma": {
     "seed": "tsx prisma/seed.ts"
@@ -27,7 +28,7 @@
     "bcryptjs": "^3.0.3",
     "jose": "^6.2.3",
     "lucide-react": "^1.21.0",
-    "next": "^16.3.5",
+    "next": "^16.3.6",
     "pg": "^8.21.0",
     "prisma": "^5.22.0",
     "react": "^18",
