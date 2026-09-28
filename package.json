@@ -14,7 +14,8 @@
     "test:crm-owner-scope": "node tests/crm/owner-scope.test.mjs",
     "test:crm-skipped": "node tests/crm/skipped-step.test.mjs",
     "test:crm-idor-read": "node tests/crm/idor-read.test.mjs",
-    "test:crm-idor-write": "node tests/crm/idor-write.test.mjs"
+    "test:crm-idor-write": "node tests/crm/idor-write.test.mjs",
+    "test:crm-queue-monitor": "node tests/crm/queue-monitor.test.mjs"
   },
   "prisma": {
     "seed": "tsx prisma/seed.ts"
