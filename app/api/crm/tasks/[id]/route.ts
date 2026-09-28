@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
 import { requirePermission } from "@/lib/auth-guard";
 import { validateCsrf } from "@/lib/csrf";
+import { getAssigneeScopeWhere } from "@/lib/crm/scope";
 import { z } from "zod";
 
 type RouteContext = { params: Promise<{ id: string }> };
@@ -21,8 +22,12 @@ export async function GET(request: NextRequest, { params }: RouteContext) {
     if (auth.response) return auth.response;
 
     const { id } = await params;
-    const item = await prisma.activity.findUnique({
-      where: { id },
+    // Read-IDOR fix (D-OWNERSHIP): mirror the tasks LIST scope exactly —
+    // without crm.view_all only the assignee may read a task. Scoped via
+    // the same where-fragment the list uses, so the rule can never drift.
+    const scope = await getAssigneeScopeWhere(auth.user.sub);
+    const item = await prisma.activity.findFirst({
+      where: { id, ...scope },
       include: {
         assignedTo: { select: { id: true, fullName: true, username: true } },
         customer: { select: { id: true, fullName: true, primaryPhone: true, customerCode: true } },
