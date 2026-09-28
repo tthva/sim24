@@ -13,7 +13,8 @@
     "clean": "node -e \"require('fs').rmSync('.next', { recursive: true, force: true })\"",
     "test:crm-owner-scope": "node tests/crm/owner-scope.test.mjs",
     "test:crm-skipped": "node tests/crm/skipped-step.test.mjs",
-    "test:crm-idor-read": "node tests/crm/idor-read.test.mjs"
+    "test:crm-idor-read": "node tests/crm/idor-read.test.mjs",
+    "test:crm-idor-write": "node tests/crm/idor-write.test.mjs"
   },
   "prisma": {
     "seed": "tsx prisma/seed.ts"
