@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
 import { requirePermission } from "@/lib/auth-guard";
 import { validateCsrf } from "@/lib/csrf";
+import { getAssigneeScopeWhere } from "@/lib/crm/scope";
 import { z } from "zod";
 
 type RouteContext = { params: Promise<{ id: string }> };
@@ -24,6 +25,16 @@ export async function PATCH(request: NextRequest, { params }: RouteContext) {
     if (auth.response) return auth.response;
 
     const { id } = await params;
+    // Write-IDOR fix (D-WRITE): RecurringTask is assignee-owned
+    // (assignedToId = User uuid) — mirror the tasks scope. 404 on deny.
+    const scope = await getAssigneeScopeWhere(auth.user.sub);
+    const owned = await prisma.recurringTask.findFirst({ where: { id, ...scope }, select: { id: true } });
+    if (!owned) {
+      return NextResponse.json(
+        { success: false, error: { code: "NOT_FOUND", message: "تسک تکرارشونده یافت نشد" } },
+        { status: 404 }
+      );
+    }
     const parsed = patchSchema.safeParse(await request.json());
     if (!parsed.success) {
       return NextResponse.json(
@@ -62,6 +73,15 @@ export async function DELETE(request: NextRequest, { params }: RouteContext) {
     if (auth.response) return auth.response;
 
     const { id } = await params;
+    // Write-IDOR fix (D-WRITE): same assignee scope as PATCH above.
+    const scope = await getAssigneeScopeWhere(auth.user.sub);
+    const owned = await prisma.recurringTask.findFirst({ where: { id, ...scope }, select: { id: true } });
+    if (!owned) {
+      return NextResponse.json(
+        { success: false, error: { code: "NOT_FOUND", message: "تسک تکرارشونده یافت نشد" } },
+        { status: 404 }
+      );
+    }
     await prisma.recurringTask.delete({ where: { id } });
     return NextResponse.json({ success: true, data: { id, deleted: true } });
   } catch (error: unknown) {
