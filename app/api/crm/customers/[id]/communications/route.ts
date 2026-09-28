@@ -98,6 +98,15 @@ export async function POST(request: NextRequest, { params }: RouteContext) {
       );
     }
 
+    // Write-IDOR fix (D-WRITE): scope the write by customer owner — 403 on
+    // deny (sub-resource; the customer id is already known, D-403).
+    if (!(await canViewCustomerData(auth.user.sub, customer.referralAgentId))) {
+      return NextResponse.json(
+        { success: false, error: { code: "FORBIDDEN", message: "دسترسی غیر مجاز" } },
+        { status: 403 }
+      );
+    }
+
     let externalId: string | null = null;
     let status = "pending";
     if (input.channel === "sms" && input.direction === "outbound" && input.sendNow) {
