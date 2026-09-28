@@ -4,6 +4,7 @@ import { requirePermission } from "@/lib/auth-guard";
 import { validateCsrf } from "@/lib/csrf";
 import { updateLeadScore } from "@/lib/crm/lead-scoring";
 import { scheduleTrigger } from "@/lib/crm/automation-engine";
+import { getAssigneeScopeWhere } from "@/lib/crm/scope";
 import { z } from "zod";
 
 type RouteContext = { params: Promise<{ id: string }> };
@@ -33,7 +34,10 @@ export async function GET(request: NextRequest, { params }: RouteContext) {
     if (auth.response) return auth.response;
 
     const { id } = await params;
-    const item = await prisma.opportunity.findUnique({ where: { id }, include: INCLUDE });
+    // Read-IDOR fix (D-OWNERSHIP): mirror the opportunities LIST scope —
+    // without crm.view_all only the assignee may read an opportunity.
+    const scope = await getAssigneeScopeWhere(auth.user.sub);
+    const item = await prisma.opportunity.findFirst({ where: { id, ...scope }, include: INCLUDE });
     if (!item) {
       return NextResponse.json(
         { success: false, error: { code: "NOT_FOUND", message: "فرصت یافت نشد" } },
