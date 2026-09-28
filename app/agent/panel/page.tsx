@@ -59,13 +59,6 @@ export default function AgentPanelPage() {
   const [statsLoading, setStatsLoading] = useState(true);
   const [error, setError] = useState("");
   
-  // DEBUG: Track component mounts and renders
-  const renderId = useRef(Math.random().toString(36).slice(2, 9));
-  const mountCount = useRef(0);
-  mountCount.current++;
-  
-  console.log(`[AGENT_PANEL] Render #${mountCount.current} (id: ${renderId.current}) at ${new Date().toISOString()}`);
-  
   // Track if this is a client-side navigation
   const isNavigation = useRef(false);
   if (typeof window !== 'undefined') {
@@ -77,23 +70,19 @@ export default function AgentPanelPage() {
   }
 
   useEffect(() => {
-    console.log(`[AGENT_PANEL] useEffect #${mountCount.current} running (id: ${renderId.current}, isNav: ${isNavigation.current})`);
     fetchAgent();
     fetchStats();
   }, []);
 
   async function fetchAgent() {
-    const requestId = Math.random().toString(36).slice(2, 9);
-    console.log(`[AGENT_PANEL] fetchAgent started (render: ${renderId.current}, req: ${requestId})`);
     try {
       const res = await fetch("/api/agent/me", { credentials: "include" });
-      console.log(`[AGENT_PANEL] fetchAgent response (render: ${renderId.current}, req: ${requestId}, status: ${res.status})`);
       if (res.status === 401) { router.push("/login"); return; }
       if (!res.ok) throw new Error("خطا در دریافت اطلاعات");
       const data = await res.json();
       setAgent(data.agent);
     } catch (err: any) {
-      console.error(`[AGENT_PANEL] fetchAgent error (render: ${renderId.current}, req: ${requestId}):`, err);
+      console.error("[AGENT_PANEL] fetchAgent error:", err);
       setError(err.message);
       router.push("/login");
     } finally {
@@ -102,17 +91,14 @@ export default function AgentPanelPage() {
   }
 
   async function fetchStats() {
-    const requestId = Math.random().toString(36).slice(2, 9);
-    console.log(`[AGENT_PANEL] fetchStats started (render: ${renderId.current}, req: ${requestId})`);
     try {
       const res = await fetch("/api/agent/stats", { credentials: "include" });
-      console.log(`[AGENT_PANEL] fetchStats response (render: ${renderId.current}, req: ${requestId}, status: ${res.status})`);
       if (res.ok) {
         const data = await res.json();
         setStats(data);
       }
     } catch (err) {
-      console.error(`[AGENT_PANEL] fetchStats error (render: ${renderId.current}, req: ${requestId}):`, err);
+      console.error("[AGENT_PANEL] fetchStats error:", err);
     } finally {
       setStatsLoading(false);
     }
