@@ -59,6 +59,17 @@ export async function PATCH(request: NextRequest, { params }: RouteContext) {
     if (auth.response) return auth.response;
 
     const { id } = await params;
+    // Write-IDOR fix (D-WRITE): mirror the tasks LIST scope — without
+    // crm.view_all only the assignee may modify a task. 404 on deny
+    // (single-resource, no existence leak, D-404).
+    const scope = await getAssigneeScopeWhere(auth.user.sub);
+    const owned = await prisma.activity.findFirst({ where: { id, ...scope }, select: { id: true } });
+    if (!owned) {
+      return NextResponse.json(
+        { success: false, error: { code: "NOT_FOUND", message: "تسک یافت نشد" } },
+        { status: 404 }
+      );
+    }
     const parsed = patchSchema.safeParse(await request.json());
     if (!parsed.success) {
       return NextResponse.json(
@@ -106,6 +117,15 @@ export async function DELETE(request: NextRequest, { params }: RouteContext) {
     if (auth.response) return auth.response;
 
     const { id } = await params;
+    // Write-IDOR fix (D-WRITE): same assignee scope as PATCH above.
+    const scope = await getAssigneeScopeWhere(auth.user.sub);
+    const owned = await prisma.activity.findFirst({ where: { id, ...scope }, select: { id: true } });
+    if (!owned) {
+      return NextResponse.json(
+        { success: false, error: { code: "NOT_FOUND", message: "تسک یافت نشد" } },
+        { status: 404 }
+      );
+    }
     const updated = await prisma.activity.update({
       where: { id },
       data: { status: "cancelled" },
