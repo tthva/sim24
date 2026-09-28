@@ -63,6 +63,22 @@ export async function PATCH(request: NextRequest, { params }: RouteContext) {
     if (auth.response) return auth.response;
 
     const { id } = await params;
+    // Write-IDOR fix (D-WRITE): mirror the /communications list scope —
+    // resolve the comm's customer and apply the owner rule. 404 on deny
+    // (single-resource, no existence leak, D-404).
+    const existing = await prisma.communication.findUnique({
+      where: { id },
+      select: { customer: { select: { referralAgentId: true } } },
+    });
+    if (
+      !existing ||
+      !(await canViewCustomerData(auth.user.sub, existing.customer?.referralAgentId ?? null))
+    ) {
+      return NextResponse.json(
+        { success: false, error: { code: "NOT_FOUND", message: "پیام یافت نشد" } },
+        { status: 404 }
+      );
+    }
     const parsed = patchSchema.safeParse(await request.json());
     if (!parsed.success) {
       return NextResponse.json(
@@ -109,6 +125,20 @@ export async function DELETE(request: NextRequest, { params }: RouteContext) {
     if (auth.response) return auth.response;
 
     const { id } = await params;
+    // Write-IDOR fix (D-WRITE): same customer-owner scope as PATCH above.
+    const existing = await prisma.communication.findUnique({
+      where: { id },
+      select: { customer: { select: { referralAgentId: true } } },
+    });
+    if (
+      !existing ||
+      !(await canViewCustomerData(auth.user.sub, existing.customer?.referralAgentId ?? null))
+    ) {
+      return NextResponse.json(
+        { success: false, error: { code: "NOT_FOUND", message: "پیام یافت نشد" } },
+        { status: 404 }
+      );
+    }
     // Soft delete: keep the audit trail, hide from timelines via subject marker
     const deleted = await prisma.communication.update({
       where: { id },
