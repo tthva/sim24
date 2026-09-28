@@ -73,8 +73,12 @@ export async function PATCH(request: NextRequest, { params }: RouteContext) {
     }
     const d = parsed.data;
 
-    const existing = await prisma.opportunity.findUnique({
-      where: { id },
+    // Write-IDOR fix (D-WRITE): fold the assignee scope into the existing
+    // pre-read so the update can never act on another user's opportunity
+    // (mirrors the opportunities LIST scope; 404 on deny, D-404).
+    const writeScope = await getAssigneeScopeWhere(auth.user.sub);
+    const existing = await prisma.opportunity.findFirst({
+      where: { id, ...writeScope },
       include: { stage: true, pipeline: true },
     });
     if (!existing) {
@@ -154,6 +158,15 @@ export async function DELETE(request: NextRequest, { params }: RouteContext) {
     if (auth.response) return auth.response;
 
     const { id } = await params;
+    // Write-IDOR fix (D-WRITE): same assignee scope as PATCH above.
+    const writeScope = await getAssigneeScopeWhere(auth.user.sub);
+    const owned = await prisma.opportunity.findFirst({ where: { id, ...writeScope }, select: { id: true } });
+    if (!owned) {
+      return NextResponse.json(
+        { success: false, error: { code: "NOT_FOUND", message: "فرصت یافت نشد" } },
+        { status: 404 }
+      );
+    }
     const updated = await prisma.opportunity.update({
       where: { id },
       data: { lostAt: new Date(), title: "— حذف‌شده —" },
