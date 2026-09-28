@@ -1,6 +1,8 @@
 import { NextRequest, NextResponse } from "next/server";
+import { prisma } from "@/lib/prisma";
 import { requirePermission, getCurrentUser } from "@/lib/auth-guard";
 import { validateCsrf } from "@/lib/csrf";
+import { canViewCustomerData } from "@/lib/crm/scope";
 import { listNotes, addNote } from "@/services/crm/customer.service";
 
 type RouteContext = { params: Promise<{ id: string }> };
@@ -12,6 +14,27 @@ export async function GET(request: NextRequest, { params }: RouteContext) {
     if (auth.response) return auth.response;
 
     const { id } = await params;
+
+    // Read-IDOR fix (D-OWNERSHIP): mirror the customer detail/timeline owner
+    // scope — previously ANY crm.read user could read any customer's
+    // free-text notes by id. GET only; POST scoping comes next session.
+    const customer = await prisma.customer.findUnique({
+      where: { id },
+      select: { referralAgentId: true },
+    });
+    if (!customer) {
+      return NextResponse.json(
+        { success: false, error: { code: "NOT_FOUND", message: "مشتری یافت نشد" } },
+        { status: 404 }
+      );
+    }
+    if (!(await canViewCustomerData(auth.user.sub, customer.referralAgentId))) {
+      return NextResponse.json(
+        { success: false, error: { code: "FORBIDDEN", message: "دسترسی غیر مجاز" } },
+        { status: 403 }
+      );
+    }
+
     const notes = await listNotes(id);
     return NextResponse.json({ success: true, data: notes });
   } catch (error) {
