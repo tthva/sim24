@@ -80,3 +80,42 @@ export async function canViewCustomer(
   const agentId = await getUserAgentId(userId);
   return agentId !== null && agentId === referralAgentId;
 }
+
+// ─── Phase 4.8c read-IDOR fixes (D-OWNERSHIP, Option A) ───────────────
+// New helpers only — existing functions above are untouched.
+
+/**
+ * Whether the user may read customer-linked data (communications,
+ * interactions, notes) for the given customer. Mirrors the customer
+ * detail/timeline guard exactly:
+ *   • crm.view_all → true (caller checks this first, or calls this)
+ *   • ownerless customer (referralAgentId IS NULL) → true
+ *   • owned by the user's Agent profile → true
+ *   • otherwise → false
+ * Fail-closed: any error resolving the caller's agent ⇒ false (deny).
+ */
+export async function canViewCustomerData(
+  userId: string,
+  customerReferralAgentId: string | null
+): Promise<boolean> {
+  try {
+    if (await hasViewAllPermission(userId)) return true;
+    return await canViewCustomer(userId, customerReferralAgentId);
+  } catch {
+    return false; // fail-closed: deny
+  }
+}
+
+/**
+ * Where-clause fragment for assignee-scoped resources (tasks/Activity and
+ * opportunities use assignedToId = User uuid as their owner key).
+ *   • crm.view_all → {} (no filter)
+ *   • otherwise    → { assignedToId: userId }
+ * Mirrors the GET /api/crm/tasks and GET /api/crm/opportunities list scope.
+ */
+export async function getAssigneeScopeWhere(
+  userId: string
+): Promise<{ assignedToId?: string }> {
+  if (await hasViewAllPermission(userId)) return {};
+  return { assignedToId: userId };
+}

@@ -3,6 +3,7 @@ import { prisma } from "@/lib/prisma";
 import { requirePermission, getCurrentUser } from "@/lib/auth-guard";
 import { validateCsrf } from "@/lib/csrf";
 import { sendSms } from "@/lib/crm/sms-sender";
+import { canViewCustomerData } from "@/lib/crm/scope";
 import { z } from "zod";
 
 type RouteContext = { params: Promise<{ id: string }> };
@@ -24,6 +25,28 @@ export async function GET(request: NextRequest, { params }: RouteContext) {
     if (auth.response) return auth.response;
 
     const { id } = await params;
+
+    // Read-IDOR fix (D-OWNERSHIP): this route previously returned the full
+    // SMS/call history for ANY customer id to any crm.read user, bypassing
+    // the /communications list scope. Mirror it: fetch the customer and
+    // apply the same owner rule as GET /customers/[id] + /timeline.
+    const customer = await prisma.customer.findUnique({
+      where: { id },
+      select: { referralAgentId: true },
+    });
+    if (!customer) {
+      return NextResponse.json(
+        { success: false, error: { code: "NOT_FOUND", message: "مشتری یافت نشد" } },
+        { status: 404 }
+      );
+    }
+    if (!(await canViewCustomerData(auth.user.sub, customer.referralAgentId))) {
+      return NextResponse.json(
+        { success: false, error: { code: "FORBIDDEN", message: "دسترسی غیر مجاز" } },
+        { status: 403 }
+      );
+    }
+
     const items = await prisma.communication.findMany({
       where: { customerId: id },
       include: { operator: { select: { id: true, fullName: true, username: true } } },
