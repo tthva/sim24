@@ -56,6 +56,25 @@ export async function POST(request: NextRequest, { params }: RouteContext) {
     if (auth.response) return auth.response;
 
     const { id } = await params;
+    // Write-IDOR fix (D-WRITE): scope the write by customer owner — 403 on
+    // deny (sub-resource, D-403).
+    const target = await prisma.customer.findUnique({
+      where: { id },
+      select: { referralAgentId: true },
+    });
+    if (!target) {
+      return NextResponse.json(
+        { success: false, error: { code: "NOT_FOUND", message: "مشتری یافت نشد" } },
+        { status: 404 }
+      );
+    }
+    if (!(await canViewCustomerData(auth.user.sub, target.referralAgentId))) {
+      return NextResponse.json(
+        { success: false, error: { code: "FORBIDDEN", message: "دسترسی غیر مجاز" } },
+        { status: 403 }
+      );
+    }
+
     const body = await request.json();
     if (!body.content || typeof body.content !== "string" || !body.content.trim()) {
       return NextResponse.json(
