@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
 import { requirePermission } from "@/lib/auth-guard";
 import { validateCsrf } from "@/lib/csrf";
+import { canViewCustomerData } from "@/lib/crm/scope";
 import { z } from "zod";
 
 type RouteContext = { params: Promise<{ id: string }> };
@@ -22,7 +23,7 @@ export async function GET(request: NextRequest, { params }: RouteContext) {
     const item = await prisma.communication.findUnique({
       where: { id },
       include: {
-        customer: { select: { id: true, fullName: true, primaryPhone: true, customerCode: true } },
+        customer: { select: { id: true, fullName: true, primaryPhone: true, customerCode: true, referralAgentId: true } },
         operator: { select: { id: true, fullName: true, username: true } },
       },
     });
@@ -32,7 +33,17 @@ export async function GET(request: NextRequest, { params }: RouteContext) {
         { status: 404 }
       );
     }
-    return NextResponse.json({ success: true, data: item });
+    // Read-IDOR fix (D-OWNERSHIP): mirror the /communications list scope
+    // (customer.referralAgentId = caller's agent). 404 — not 403 — on deny,
+    // so the endpoint does not confirm the resource exists.
+    if (!(await canViewCustomerData(auth.user.sub, item.customer?.referralAgentId ?? null))) {
+      return NextResponse.json(
+        { success: false, error: { code: "NOT_FOUND", message: "پیام یافت نشد" } },
+        { status: 404 }
+      );
+    }
+    const { customer: _customer, ...data } = item;
+    return NextResponse.json({ success: true, data: { ...data, customer: _customer } });
   } catch (error) {
     console.error("[CRM] communication detail failed:", error);
     return NextResponse.json(
