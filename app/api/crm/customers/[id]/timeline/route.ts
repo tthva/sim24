@@ -27,7 +27,7 @@ export type TimelineEntry = {
   description: string | null;
   timestamp: string; // ISO
   status?: string | null;
-  meta?: Record<string, string | number | null>;
+  meta?: Record<string, string | number | string[] | null>;
 };
 
 // ─── GET /api/crm/customers/[id]/timeline ────────────────
@@ -235,6 +235,10 @@ export async function GET(request: NextRequest, { params }: RouteContext) {
               rejectionCode: rejection?.reason?.code ?? null,
               rejectionNotes: rejection?.notes ?? null,
               rejectionFilesCount: rejection?.attachments?.length ?? 0,
+              // Attachment file keys — downloadable via the existing
+              // authenticated presign endpoint:
+              //   GET /api/storage/presign?fileKey=<key>
+              rejectionFiles: rejection?.attachments ?? [],
               rejectedBy: rejection?.rejectedBy
                 ? rejection.rejectedBy.fullName || rejection.rejectedBy.username
                 : null,

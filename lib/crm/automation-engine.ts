@@ -6,8 +6,11 @@
  * wired into any route yet — Phase 4.2 ships the engine only (no API, no UI).
  *
  * RUNTIME ASSUMPTION: persistent Node process (SIM24 runs on PM2 cluster).
- * `scheduleTrigger` uses `setTimeout`, which does NOT survive a process exit
- * or a `pm2 reload`. Never use this engine on a serverless/edge runtime.
+ * Triggers are enqueued on the durable task queue (lib/queue.ts) — with an
+ * in-memory fallback when Redis is unavailable — so they survive slow turns
+ * and get retry/backoff/dead-letter handling for free. `scheduleTrigger`
+ * still never blocks the caller; it no longer relies on a bare setTimeout,
+ * which did NOT survive a process exit or `pm2 reload`.
  *
  * ─── Reconciled with the real repo APIs (the original spec could not compile) ───
  * 1. `sendSms` is positional and returns `externalId`:
@@ -26,6 +29,36 @@ import { prisma } from "@/lib/prisma";
 import { sendSms } from "./sms-sender";
 import { logActivity } from "./activity-logger";
 import { sendNotification } from "./notifications-dispatch";
+import { registerJobHandler, enqueue } from "@/lib/queue";
+
+// ─── Durable queue wiring (Phase 4.8e hardening) ─────────────────────────
+// The trigger executor runs fireTrigger with its existing internal timeout.
+// Re-enqueue on failure is NOT needed: the queue's own retry-with-backoff
+// (QUEUE_MAX_ATTEMPTS) applies, then the job lands in the bounded dead-letter
+// history (getQueueStats) instead of vanishing on a process restart.
+const AUTOMATION_JOB = "crm-automation-trigger";
+
+let automationHandlerRegistered = false;
+
+/**
+ * Register the queue executor for CRM automation triggers. Idempotent; called
+ * on module load (and from instrumentation bootstrap) so any process that can
+ * enqueue a trigger can also execute it.
+ */
+export function registerAutomationJobHandler(): void {
+  if (automationHandlerRegistered) return;
+  registerJobHandler(AUTOMATION_JOB, async (payload) => {
+    const event = payload as TriggerEvent;
+    if (!event || typeof event.type !== "string") {
+      throw new Error("[CRM automation] invalid trigger payload");
+    }
+    await fireTrigger(event);
+  });
+  automationHandlerRegistered = true;
+}
+
+// Side-effect registration, mirroring lib/queue-jobs.ts (send-sms).
+registerAutomationJobHandler();
 
 export type TriggerEvent = {
   type: string;
@@ -41,17 +74,18 @@ export type AutomationContext = {
 };
 
 /**
- * Fire-and-forget scheduler. Detaches from the current request context
- * via setTimeout(0) so the caller's response is sent FIRST, then the
- * automation runs. Only safe on persistent runtimes (PM2/Docker) — not
- * on serverless. SIM24 runs on PM2 cluster.
+ * Fire-and-forget scheduler. Enqueues the trigger on the durable task queue
+ * (lib/queue.ts) so the caller's response is sent FIRST and the automation
+ * runs asynchronously with retry/backoff. Safe on persistent runtimes
+ * (PM2/Docker); if Redis is unavailable the queue fails open to in-memory
+ * execution — same guarantees as before, plus retries.
  */
 export function scheduleTrigger(event: TriggerEvent): void {
-  setTimeout(() => {
-    fireTrigger(event).catch((err) => {
-      console.error("[CRM automation] scheduleTrigger failure:", err);
-    });
-  }, 0);
+  enqueue(AUTOMATION_JOB, event, { jobId: undefined }).catch((err) => {
+    // Queue enqueue itself failed (should be nearly impossible — the in-memory
+    // fallback path never rejects). Log; do NOT throw into the caller.
+    console.error("[CRM automation] scheduleTrigger enqueue failure:", err);
+  });
 }
 
 export async function fireTrigger(event: TriggerEvent): Promise<void> {

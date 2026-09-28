@@ -1,4 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
+import { limitRequest, CRM_WRITE_RATE_LIMIT } from "@/lib/rate-limit-http";
 import { requirePermission } from "@/lib/auth-guard";
 import { prisma } from "@/lib/prisma";
 import { validateCsrf } from "@/lib/csrf";
@@ -92,6 +93,10 @@ export async function GET(request: NextRequest) {
 export async function POST(request: NextRequest) {
   const csrfErr = validateCsrf(request);
   if (csrfErr) return csrfErr;
+
+  // Rate-limit writes per IP (fail-open on Redis outage).
+  const rl = await limitRequest(request, CRM_WRITE_RATE_LIMIT, "customers-create");
+  if (rl.limited) return rl.response;
 
   try {
     const auth = await requirePermission(request, "crm.manage");

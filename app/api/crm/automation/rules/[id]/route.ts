@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
 import { requirePermission } from "@/lib/auth-guard";
+import { hasViewAllPermission } from "@/lib/crm/scope";
 import { validateCsrf } from "@/lib/csrf";
 import { z } from "zod";
 
@@ -81,6 +82,19 @@ const DETAIL_INCLUDE = {
   logs: { orderBy: { createdAt: "desc" }, take: 20 },
 } as const;
 
+// ─── Rule scoping (IDOR hardening, deferred from 4.8c) ─────────────
+// crm.manage is required to reach these handlers, but two managers must not
+// mutate (or even read the logs of) each other's rules. Users with
+// crm.view_all keep full visibility; everyone else is restricted to rules
+// they created. Deny = 404, no existence leak.
+async function scopedRule(id: string, userId: string) {
+  const canViewAll = await hasViewAllPermission(userId);
+  return prisma.automationRule.findFirst({
+    where: canViewAll ? { id } : { id, createdById: userId },
+    select: { id: true, _count: { select: { logs: true } } },
+  });
+}
+
 // ─── GET /api/crm/automation/rules/[id] — rule + last 20 logs ─────
 export async function GET(request: NextRequest, { params }: RouteContext) {
   try {
@@ -88,8 +102,10 @@ export async function GET(request: NextRequest, { params }: RouteContext) {
     if (auth.response) return auth.response;
 
     const { id } = await params;
-    const rule = await prisma.automationRule.findUnique({
-      where: { id },
+    const rule = await prisma.automationRule.findFirst({
+      where: (await hasViewAllPermission(auth.user.sub))
+        ? { id }
+        : { id, createdById: auth.user.sub },
       include: DETAIL_INCLUDE,
     });
     if (!rule) {
@@ -142,8 +158,16 @@ export async function PATCH(request: NextRequest, { params }: RouteContext) {
       );
     }
 
+    const existing = await scopedRule(id, auth.user.sub);
+    if (!existing) {
+      return NextResponse.json(
+        { success: false, error: { code: "NOT_FOUND", message: "قانون اتوماسیون یافت نشد" } },
+        { status: 404 }
+      );
+    }
+
     const updated = await prisma.automationRule.update({
-      where: { id },
+      where: { id: existing.id },
       data: parsed.data,
       include: DETAIL_INCLUDE,
     });
@@ -175,10 +199,7 @@ export async function DELETE(request: NextRequest, { params }: RouteContext) {
 
     const { id } = await params;
 
-    const existing = await prisma.automationRule.findUnique({
-      where: { id },
-      select: { id: true, _count: { select: { logs: true } } },
-    });
+    const existing = await scopedRule(id, auth.user.sub);
     if (!existing) {
       return NextResponse.json(
         { success: false, error: { code: "NOT_FOUND", message: "قانون اتوماسیون یافت نشد" } },
@@ -188,7 +209,7 @@ export async function DELETE(request: NextRequest, { params }: RouteContext) {
 
     // AutomationLog.rule declares onDelete: Cascade, so execution history is
     // removed with the rule. The count is reported back for auditability.
-    await prisma.automationRule.delete({ where: { id } });
+    await prisma.automationRule.delete({ where: { id: existing.id } });
 
     return NextResponse.json({
       success: true,

@@ -3,6 +3,7 @@ import { prisma } from "@/lib/prisma";
 import { requirePermission } from "@/lib/auth-guard";
 import { validateCsrf } from "@/lib/csrf";
 import { getAssigneeScopeWhere } from "@/lib/crm/scope";
+import { limitRequest, CRM_WRITE_RATE_LIMIT } from "@/lib/rate-limit-http";
 import { z } from "zod";
 
 type RouteContext = { params: Promise<{ id: string }> };
@@ -53,6 +54,10 @@ export async function GET(request: NextRequest, { params }: RouteContext) {
 export async function PATCH(request: NextRequest, { params }: RouteContext) {
   const csrfErr = validateCsrf(request);
   if (csrfErr) return csrfErr;
+
+  // Rate-limit writes per IP (fail-open on Redis outage).
+  const rl = await limitRequest(request, CRM_WRITE_RATE_LIMIT, "task-patch");
+  if (rl.limited) return rl.response;
 
   try {
     const auth = await requirePermission(request, "crm.manage");
